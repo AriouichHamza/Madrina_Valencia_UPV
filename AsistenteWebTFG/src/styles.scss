@@ -1,0 +1,81 @@
+/* You can add global styles to this file, and also import other style files */
+
+@use '@angular/material' as mat;
+
+@include mat.core();
+
+$my-primary: mat.define-palette(mat.$teal-palette, 500);
+$my-accent: mat.define-palette(mat.$purple-palette, A200, A100, A400);
+$my-warn: mat.define-palette(mat.$red-palette);
+
+$my-theme: mat.define-light-theme((
+ color: (
+   primary: $my-primary,
+   accent: $my-accent,
+   warn: $my-warn
+ )
+));
+
+// Emit theme-dependent styles for common features used across multiple components.
+@include mat.core-theme($my-theme);
+
+// Emit styles for MatButton based on `$my-theme`. Because the configuration
+// passed to `define-light-theme` omits typography, `button-theme` will not
+// emit any typography styles.
+@include mat.button-theme($my-theme);
+
+// Include the theme mixins for other components you use here.
+
+@include mat.all-component-themes($my-theme);
+
+:root{
+  --primary: #009688;
+}
+
+html, body { height: 100%; }
+body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; }
+
+.toolbar-label {
+  color: var(--primary);
+  font: 500 20px/32px Roboto, "Helvetica Neue", sans-serif;
+  letter-spacing: normal;
+}
+
+.toolbar-spacer {
+  flex: 1 1 auto;
+}
+
+/*******************************************************************************
+SIDENAV FORM (add examen, add asignatura, edit examen, edit asignatura)
+*******************************************************************************/
+.sidenav-form {
+  padding: 16px;
+  width: fit-content;
+  height: calc(100% - 32px);
+}
+
+.sidenav-form-header {
+  display: flex;
+  flex-direction: row;
+  margin-bottom: 16px;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--primary);
+  font: 500 20px/32px Roboto, "Helvetica Neue", sans-serif;
+  letter-spacing: normal;
+}
+
+.sidenav-form-container {
+  display: flex;
+  flex-direction: column;
+  height: calc(100% - 40px);
+}
+
+.sidenav-form-divider {
+  display: block;
+  margin: 0;
+  margin-bottom: 18px;
+  border-top-width: 1px;
+  border-top-style: solid;
+  border-top-color: rgba(0,0,0,.12);
+}

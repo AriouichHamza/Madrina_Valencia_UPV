@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+
+<title>Ayuda Madrina</title>
+
+
+<style>
+input {
+  border-style: solid;
+  border-color: coral;
+}
+
+type
+{
+ font-weight: bold;
+ color: red;
+}
+
+.imgl
+{
+width: 75%;
+}
+
+.imgm
+{
+width: 45%;
+}
+
+
+/* https://www.w3schools.com/css/css_dropdowns.asp */
+.dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.dropdown-content {
+  display: none;
+  position: absolute;
+  background-color: #f9f9f9;
+  min-width: 160px;
+  box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+  padding: 12px 16px;
+  z-index: 1;
+}
+
+.dropdown:hover .dropdown-content {
+  display: block;
+}
+
+
+/* atres coses */
+nav{
+  display: inline;
+}
+
+nav a{
+ text-decoration: none;
+ background-color: white;
+ color: black;
+}
+
+ul.menu {
+  list-style-type: none;
+  margin: 0;
+  padding: 0;
+}
+
+ul.menu li {
+  display: inline; 
+}
+
+/* Change the link color to #111 (black) on hover */
+ul.menu li a:hover {
+  background-color: pink;
+}
+
+/* https://www.w3schools.com/howto/howto_js_scroll_to_top.asp */
+body {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 20px;
+}
+
+#myBtn {
+  display: none;
+  position: fixed;
+  bottom: 20px;
+  right: 30px;
+  z-index: 99;
+  font-size: 18px;
+  border: none;
+  outline: none;
+  background-color: darkblue; /*red;*/
+  color: white;
+  cursor: pointer;
+  padding: 15px;
+  border-radius: 4px;
+}
+
+/*#myBtn:hover {
+  background-color: #555;
+}*/
+</style>
+
+</head>
+
+<body style="background-color:#b5e6ff;">
+
+<!-- Volia fer-ho com una llista ... 
+ <nav>
+ <ul class="menu">
+            <li class="dropdown"><a href="contenido.html#registrarse" >Registrarse</a></li>
+			<li class="dropdown"><a href="contenido.html#crear_curso" >Crear curso</a></li>
+			<li class="dropdown"><a href="contenido.html#crear_asignatura" >Crear asignatura</a></li>
+			<li class="dropdown"><a href="contenido.html#crear_examen" >Crear examen</a></li>
+			<li class="dropdown"><a href="contenido.html#clasificar_examenes" >Clasificar exámenes</a>
+            <div class="dropdown-content">
+				<p><a href="contenido.html#clasificar_fijo" >Número de páginas fijo</a></p>
+				<p><a href="contenido.html#clasificar_variable" >Número de páginas variable</a></p>
+			</div>
+			</li>
+			<li class="dropdown"><a href="contenido.html#editar_clasificacion" >Editar una clasificación</a></li>
+			<li class="dropdown"><a href="contenido.html#descargar_todo" >Publicar notas y exámenes</a>
+			  <div class="dropdown-content">
+				<p><a href="contenido.html#subir_examenes" >Subir exámenes</a></p>
+				<p><a href="contenido.html#subir_notas" >Subir notas a Padrino</a></p>
+            </div>
+            </li>
+            <li style="float:right"><a class="active" href="#about">Contacto (ficar ací la referència als autors)</a></li>
+</ul>
+</nav>
+-->
+
+<nav>
+ <div class="dropdown">
+  <span><a href="#registrarse" >Registrarse</a></span>
+ </div>
+  <div class="dropdown">
+  <span><a href="#crear_curso" >Crear curso</a></span>
+ </div>
+  <div class="dropdown">
+  <span><a href="#crear_asignatura" >Crear asignatura</a></span>
+ </div>
+  <div class="dropdown">
+  <span><a href="#crear_examen" >Crear examen</a></span>
+ </div>
+  <div class="dropdown">
+  <span><a href="#clasificar_examenes" >Clasificar exámenes</a></span>
+            <div class="dropdown-content">
+				<p><a href="#clasificar_fijo" >Número de páginas fijo</a></p>
+				<p><a href="#clasificar_variable" >Número de páginas variable</a></p>
+			</div>
+ </div>
+ <div class="dropdown">
+  <span><a href="#editar_clasificacion" >Editar una clasificación</a></span>
+</div>
+ <div class="dropdown">
+ 			<span><a href="#descargar_todo" >Publicar notas y exámenes</a></span>
+			  <div class="dropdown-content">
+				<p><a href="#subir_examenes" >Subir exámenes</a></p>
+				<p><a href="#subir_notas" >Subir notas a Padrino</a></p>
+            </div>
+ </div>
+ <div style="float:right"><a class="active" href="#about">Contacto (ficar ací la referència als autors)</a></div>
+</nav>
+
+<!--
+	    <div id="menu">
+    		<ol>
+			<li><a href="contenido.html#registrarse" >Registrarse.</a></li>
+			<li><a href="contenido.html#crear_curso" >Crear curso.</a></li>
+			<li><a href="contenido.html#crear_asignatura" >Crear asignatura.</a></li>
+			<li><a href="contenido.html#crear_examen" >Crear examen.</a></li>
+			<li><a href="contenido.html#clasificar_examenes" >Clasificar exámenes.</a></li>
+			<ol type="a">
+				<li><a href="contenido.html#clasificar_fijo" >Número de páginas fijo.</a></li>
+				<li><a href="contenido.html#clasificar_variable" >Número de páginas variable.</a></li>
+			</ol>
+			<li><a href="contenido.html#editar_clasificacion" >Editar una clasificación.</a></li>
+			<li><a href="contenido.html#descargar_todo" >Publicar notas y exámenes.</a></li>
+			<ol type="a">
+				<li><a href="contenido.html#subir_examenes" >Subir exámenes.</a></li>
+				<li><a href="contenido.html#subir_notas" >Subir notas a Padrino.</a></li>
+			</ol>
+            </ol>    
+
+		</div>
+-->
+
+<button onclick="topFunction()" id="myBtn" title="Volver al menú">Menú</button>
+<script>
+// Get the button
+let mybutton = document.getElementById("myBtn");
+
+// When the user scrolls down 20px from the top of the document, show the button
+window.onscroll = function() {scrollFunction()};
+
+function scrollFunction() {
+  if (document.body.scrollTop > 20 || document.documentElement.scrollTop > 20) {
+    mybutton.style.display = "block";
+  } else {
+    mybutton.style.display = "none";
+  }
+}
+
+// When the user clicks on the button, scroll to the top of the document
+function topFunction() {
+  document.body.scrollTop = 0;
+  document.documentElement.scrollTop = 0;
+}
+</script>
+
+
+
+<h1> Ajuda Madrina_Revisa</h1>
+<p>Ajuda del programa Madrina_Revisaper a la revisió de examens realitzat per el grup de profesors de FCO-GITST del
+ DISCA.</p>
+ <p> Ací falta una mini-intro o un enllaç a la versió PDF o ja ho parlem.</a>.
+<p>Cualquier problema, duda o consulta, envía un correo a <a href="mailto:amarti@disca.upv.es">amarti@disca.upv.es</a></p>
+
+
+
+
+<h2 id=registrarse> Registrarse</h2>
+
+Para registrarse, es interesante utilizar un correo electrónico de los siguientes dominios: <br>
+<ol>
+<ul>@upv.es</ul>
+<ul>@upv.edu.es</ul>
+<ul>@upv.upvnet.es</ul>
+</ol>
+Se puede utilizar scualquier correo electrónico, pero entonces no se puede recuperar la contraseña en caso de olvido.
+
+<h2 id=crear_curso> Crear curso</h2>
+
+Para crear un nuevo curso, sólo tienes que hacer click en el botón<br>
+<img src="imgs/boton_nuevo_curso.png" alt="+Nuevo curso" width="20%"/><br>
+
+<a src="#registrarse"></a>
+
+<h2 id=crear_asignatura> Crear asignatura</h2>
+Para crear una asignatura necesitas la lista de alumnos en formato csv. La recomendación es descargarla desde Padrino, pero sirve cualquier lista que contenga al menos el DNI, el nombre y apellidos de los alumnos, sin importar el formato.<br>
+Para crear una nueva asignatura haz click en el botón + que aparece debajo del identificador de curso<br>
+<img src="imgs/boton_nueva_asignatura.png" alt="+" width="5%"/><br>
+Al hacer click aparece el siguiente cuadro de dialogo.<br>
+<img src="imgs/crear_asignatura.png" class="imgl"/><br>
+En la primera línea introduce el nombre completo de la asignatura y el acrónimo que quieras usar.<br>
+Puedes asignar el color que se usará para diferenciar las asignaturas que tengas en el mismo curso.<br>
+A continuación con el botón "Cargar alumnos" carga la lista de alumnos desde un fichero csv.<br>
+Cuando cargues la lista, podrás ver una previsualización del fichero en el cuadro CSV Texto, como se muestra en la siguiente imagen.<br>
+<img src="imgs/crear_asignatura2.png" class="imgl"/><br>
+Ahora es el momento de configurar las características del fichero. Usa el scroll para recorrer la lista y comprueba si hay acentos o símbolos extraño.<br>
+Si es así, cambia la "Codificación" hasta que veas correctamente los acentos.<br> 
+También tienes que elegir el separador de campos, normalmente es un ;<br>
+También has de decir si la lista tiene cabeceras.<br>
+Si has descargado la lista de Padrino, la codificación es Latin1, el separador es ; y sí hay cabecera.<br>
+La siguiente imagen muestra la configuración de Padrino:<br>
+<img src="imgs/crear_asignatura3.png" class="imgl"/><br>
+Ahora sólo queda asignar el DNI, los apellidos y el nombre. Elige en cada campo la columna correspondiente.<br>
+Puedes hacer todas las pruebas que quieras, y puedes escoger la misma columna del fichero para diferentes campos.<br>
+Si usas la lista de Padrino, has de de elegir la columna "nombre" para el apellido1, apellido 2 y nombre, como puedes ver en la siguiente imagen:<br>
+<img src="imgs/crear_asignatura7.png" class="imgl"/><br>
+Puedes usar el scroll para ver el resultado de la asignación, y cuando esté correcto, haz click en el botón "Crear Asignatura".
+
+<h2 id=crear_examen>Crear examen.</h2>
+Para crear un nuevo examen haz click en la flecha abajo junto al nombre de la asignatura y aparecerá un desplegable:
+<br><img src="imgs/nuevo_examen.png" width="30%"  /><br>
+Haciendo click en nuevo examen aparecerá el siguiente cuadro de dialogo, donde has de introducir:<br>
+- El nombre del examen. ¡Atención! Este nombre se añadirá a los nombres de los ficheros que se entregarán a los alumnos.<br>
+- La fecha del examen.<br>
+- El o los ficheros PDF con los exámenes corregidos de los alumnos, haciendo click en el botón "cargar exámenes".
+Los ficheros se pueden reordenar arrastrándolos.<br>
+<br><img src="imgs/nuevo_examen3.png" class="imgm"  /><br>
+Por último, haz click en el botón "Crear examen".<br>
+Al hacer click en el botón, aparece un cuadro mostrando el progreso de carga de los exámenes, y posterioremente aparecerá un cuadro con información del examen y el número de exámenes clasificados.
+<br><img src="imgs/nuevo_examen4.png" class="imgm"/>
+<br><img src="imgs/nuevo_examen4.png" class="imgm"/><br>
+<h2 id=clasificar_examenes>Clasificar exámenes.</h2>
+Para clasificar los exámenes haz click en el cuadro del examen.<br>
+¡Importante! La carga de todas las páginas del examen puede requerir cierto, y debes esperar a que acabe, cuando el cuadro de número de páginas deje de incrementarse.<br>
+Aunque el procedimiento de asignar las páginas a un alumno es muy similar si todos los exámenes tienen el mismo número de hojas o diferente, vamos a verlo de forma separada.
+<h2 id=clasificar_fijo>Número de páginas fijo.</h2>
+Si TODOS (o la mayoría) de exámenes tienen el mismo número de página, el proceso de clasificación será más rápido. <br>
+El primer paso es escribir el número de páginas en el cuadro de entrada y activar el marcador de página final automático.<br>
+<img src="imgs/clasificar1.png" class="imgl"/><br>
+El segundo paso es posicionar la lupa. En la esquina superior izquierda puede apreciarse un marco rectangular que recorta el examen.<br>
+Haciendo click en este marco puede ubicarse en el lugar deseado, y fijarlo con un segundo click. Se puede desactivar con un nuevo click, activar nuevamente con otro click.<br>
+<img src="imgs/clasificar2.png" class="imgl"/><br>
+Para comenzar a clasificas exámenes, hacemos click en el campo de Apellidos, y aparecerá la lista de todos los alumnos.<br>
+<img src="imgs/clasificar3.png" class="imgl"/><br>
+Tecleamos el apellido del alumno, y la lista se actualizará mostrando todos los alumnos que contengan la secuencia escrita en sus apellidos o nombre. Esto permite buscar por cualquier apellido, nombre o DNI.<br>
+<img src="imgs/clasificar4.png" class="imgl"/><br>
+Podemos seguir tecleando hasta que solo quede el alumno deseado, y con la tecla INTRO lo seleccionamos, <br>
+o podemos usar las feclas &#8595; y &#8593; para posicionarnos en el alumno y seleccionarlo con la tecla INTRO.<br>
+<img src="imgs/clasificar5.png" class="imgl"/><br>
+Pulsamos la tecla TAB y escribimos la nota del alumno.<br>
+Volvemos a pulsar la tecla TAB, DOS veces, para posicionarnos en el símbolo del disquete. Pulsamos INTRO y el examen es asingnado al alumno.<br>
+El visor de exámenes se posiciona en la primera página del siguiente examen, y el cursos en el campo de apellidos para clasificar el siguiente examen.
+<img src="imgs/clasificar6.png" class="imgl"/><br> 
+En la tabla inferior se pueden ver los exámenes clasificados con su información. Es posible ordenar esta tabla por los diferentes campos, y editar una clasificación.<br>
+<img src="imgs/clasificar7.png" class="imgl"/><br> 
+
+El proceso de clasificación puede interrumpirse (salir del examen e incluso apagar el ordenador) y continuará donde se había quedado.<br>
+También es posible editar una clasificación. Se explica con detalle en la sección "Editar examen".<br>
+Una vez clasificados o asignados todos los exámenes, hacemos click en el botón descargar, y guardamos el zip resultante. <br>
+En la sección "Publicar notas y exámenes" se explica como utilizar este zip.
+<h2 id=clasificar_variable>Número de páginas variable.</h2>
+
+ </body>

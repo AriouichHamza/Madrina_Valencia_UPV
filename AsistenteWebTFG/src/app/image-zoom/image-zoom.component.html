@@ -1,0 +1,7 @@
+<div class="image-zoom-container" [style.height.px]="containerHeight">
+  <div id="glassZoom" class="img-magnifier-glass" (mousemove)="moveMagnifier($event)"
+  (mouseup)="changeVisibleGlass()"></div>
+  <img id="imgZoom" class="image-zoom-full" [src]="fullImage" [height]="containerHeight"
+    (mousemove)="moveMagnifier($event)"
+    (mouseup)="changeVisibleGlass()"/>
+</div>

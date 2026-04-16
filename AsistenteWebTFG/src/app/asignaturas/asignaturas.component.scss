@@ -1,0 +1,63 @@
+
+.asignaturas-main {
+    height: calc(100% - 64px);
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+}
+
+.asignaturas-left {
+    width: 100%;    
+}
+
+.asignaturas-right {
+    position: fixed;
+    width: 100%;
+    height: 100%;
+}
+
+.asignatura-navbar {
+    margin: 16px;
+    display: flex;
+    flex-direction: row;
+}
+
+.curso {
+    margin: 16px;
+}
+
+.curso-navbar {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.curso-label {
+    margin-right: 16px;
+    color: var(--primary);
+    font-size: 20px;
+}
+
+.curso-spacer {
+    flex: 1 1 auto;
+    height: 2px;
+    background-color: var(--primary);
+}
+
+.curso-asignaturas {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+}
+
+.bt-nueva-asignatura {
+    min-width: 36px;
+    padding: 0;
+    height: fit-content;
+}
+
+.curso-examenes {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+}

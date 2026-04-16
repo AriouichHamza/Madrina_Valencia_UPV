@@ -1,0 +1,54 @@
+<div mat-dialog-title class="dialog-header">
+  <span>Nuevo examen</span>
+  <button mat-icon-button color="primary" [mat-dialog-close]="undefined">
+    <mat-icon>close</mat-icon>
+  </button>
+</div>
+<mat-dialog-content class="sidenav-form-container">
+  <div class="add-examen-row-inputs">
+    <mat-form-field appearance="fill">
+      <mat-label>Nombre del examen (sin blancos)</mat-label>
+      <input matInput [(ngModel)]="examen.nombre" required>
+      <mat-hint align="end" *ngIf="examen.nombre.length > 255">{{examen.nombre.length || 0}}/256</mat-hint>
+    </mat-form-field>
+    <mat-form-field appearance="fill">
+      <mat-label>Fecha del examen</mat-label>
+      <input matInput [matDatepicker]="picker" (dateInput)="dateInput($event)" required>
+      <mat-datepicker-toggle matSuffix [for]="picker"></mat-datepicker-toggle>
+      <mat-datepicker #picker disabled="false"></mat-datepicker>
+    </mat-form-field>
+  </div>
+  <div class="add-examen-row-load">
+    <button class="load-button" mat-stroked-button color="primary" (click)="addExamenes.click()">
+      <mat-icon>description</mat-icon>
+      <span>Cargar exámenes</span>
+    </button>
+    <div class="slide-toggle-container">
+      <mat-slide-toggle 
+      [(ngModel)]="examen.isAvanzado" 
+      (change)="onChangeSlideAutomatizado($event)"
+      color="primary">Automatizado</mat-slide-toggle>
+    </div>
+    <mat-form-field appearance="fill">
+      <mat-label>Asignatura</mat-label>
+      <input matInput [(ngModel)]="asignatura.acronimo" disabled>
+    </mat-form-field>
+    <input class="load-input" type="file" accept=".pdf" (change)="onChangeUploadExamenes($event.target)" multiple
+      #addExamenes>
+  </div>
+  <div cdkDropList class="pdf-row-container" (cdkDropListDropped)="drop($event)">
+    <div class="pdf-item" *ngFor="let file of filesOrder" cdkDrag>
+      {{file.file}}
+      <mat-icon>drag_indicator</mat-icon>
+    </div>
+  </div>
+</mat-dialog-content>
+<mat-dialog-actions align="end">
+  <button mat-button [mat-dialog-close]="undefined">Cancelar</button>
+  <button mat-flat-button color="primary" (click)="saveExamen()" [disabled]="waitResponse">
+    <mat-icon *ngIf="!waitResponse">save</mat-icon>
+    <mat-icon *ngIf="waitResponse" class="edit-asignatura-footer-spinner">sync</mat-icon>
+    <span>Crear examen</span>
+  </button>
+  <mat-hint class="edit-asignatura-footer-info" *ngIf="errorMessage.length > 0">{{errorMessage}}</mat-hint>
+</mat-dialog-actions>

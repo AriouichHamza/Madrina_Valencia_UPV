@@ -1,0 +1,44 @@
+<div mat-dialog-title class="dialog-header">
+  <span *ngIf="!asignatura.id">Crear una nueva asignatura</span>
+  <span *ngIf="asignatura.id">Editar la asignatura</span>
+  <button mat-icon-button color="primary" [mat-dialog-close]="undefined">
+    <mat-icon>close</mat-icon>
+  </button>
+</div>
+<mat-dialog-content class="sidenav-form-container">
+  <div class="edit-asignatura-row-inputs">
+    <mat-form-field appearance="fill">
+      <mat-label>Nombre de la asignatura</mat-label>
+      <input matInput [(ngModel)]="asignatura.nombre" required>
+      <mat-hint align="end" *ngIf="asignatura.nombre.length > 255">{{asignatura.nombre.length || 0}}/256</mat-hint>
+    </mat-form-field>
+    <mat-form-field appearance="fill">
+      <mat-label>Acrónimo</mat-label>
+      <input matInput [(ngModel)]="asignatura.acronimo" required>
+      <mat-hint align="end" *ngIf="asignatura.acronimo.length > 15">{{asignatura.acronimo.length || 0}}/16
+      </mat-hint>
+    </mat-form-field>
+    <mat-form-field appearance="fill">
+      <mat-label>Curso</mat-label>
+      <input disabled matInput [(ngModel)]="curso">
+    </mat-form-field>
+  </div>
+  <div class="edit-asignatura-row-colors">
+    <div class="edit-asignatura-cell-color" *ngFor="let color of colores"
+      [ngClass]="{'edit-asignatura-cell-color-active': asignatura.color === color}" (click)="setColor(color)">
+      <div class="edit-asignatura-circle-color" [style.background-color]="color"></div>
+    </div>
+  </div>
+  <app-csv-reader [(alumnos)]="alumnos" [(pref)]="prefCSV" (loadFile)="onLoadFile()" ></app-csv-reader>
+</mat-dialog-content>
+<mat-dialog-actions align="end">
+  <button mat-button [mat-dialog-close]="undefined">Cancelar</button>
+  <button mat-flat-button color="primary" (click)="editAsignatura()" [disabled]="waitResponse">
+    <mat-icon *ngIf="!waitResponse && !asignatura.id">save</mat-icon>
+    <mat-icon *ngIf="!waitResponse && asignatura.id">edit</mat-icon>
+    <mat-icon *ngIf="waitResponse" class="edit-asignatura-footer-spinner">sync</mat-icon>
+    <span *ngIf="!asignatura.id">Crear asignatura</span>
+    <span *ngIf="asignatura.id">Guardar cambios</span>
+  </button>
+  <mat-hint class="edit-asignatura-footer-info" *ngIf="errorMessage.length > 0">{{errorMessage}}</mat-hint>
+</mat-dialog-actions>

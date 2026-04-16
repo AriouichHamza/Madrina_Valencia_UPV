@@ -1,0 +1,25 @@
+<mat-toolbar color="primary">
+  <button *ngIf="back" mat-icon-button (click)="onBack()">
+    <mat-icon>arrow_back</mat-icon>
+  </button>
+  <span>Madrina</span>
+  <span class="toolbar-spacer"></span>
+  <button *ngIf="settings" mat-icon-button [matMenuTriggerFor]="menu">
+    <mat-icon>more_vert</mat-icon>
+  </button>
+  <mat-menu #menu="matMenu">
+    <button *ngIf="false" mat-menu-item (click)="correo()">
+      <mat-icon>mail</mat-icon>
+      <span>Cambiar correo</span>
+    </button>
+    <button mat-menu-item (click)="info()">
+      <mat-icon>info</mat-icon>
+      <span>Información</span>
+    </button>
+    <button mat-menu-item (click)="logout()">
+      <mat-icon>logout</mat-icon>
+      <span>Cerrar sesión</span>
+    </button>
+  </mat-menu>
+
+</mat-toolbar>

@@ -1,0 +1,20 @@
+.card-login {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  left: 50%;
+  top: 50%;
+}
+
+.card-login mat-form-field {
+  width: 100%;
+}
+
+.card-login .mat-card-title {
+  margin-bottom: 18px;
+}
+
+.info-lopd {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+}

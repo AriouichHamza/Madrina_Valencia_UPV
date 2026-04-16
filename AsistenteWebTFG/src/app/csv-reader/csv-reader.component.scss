@@ -1,0 +1,51 @@
+
+.mb-18 {
+  margin-bottom: 18px;
+}
+
+.csv-format {
+  display: grid;
+  column-gap: 18px;
+  grid-template-columns: 160px 120px 75px auto;
+  align-items: center;
+}
+
+.csv-format input {
+  display: none;
+}
+
+.csv-format button {
+  height: calc(100% - .50em - 1.34375em);
+  margin: .25em 0;
+  margin-bottom: calc(1.34375em + .25em);
+}
+
+.csv-text mat-form-field {
+  width: 100%;
+}
+
+.csv-headers {
+  width: 100%;
+  display: grid;
+  column-gap: 18px;
+  grid-template-columns: repeat(6, 120px);
+}
+
+.csv-table {
+  width: 100%;
+  height: 100px;
+  overflow-y: auto;
+}
+
+.csv-table table {
+  width: 100%;
+}
+
+.csv-table-nada {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}

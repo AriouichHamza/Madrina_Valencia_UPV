@@ -1,0 +1,11 @@
+<h2 mat-dialog-title>Cambiar correo electrónico</h2>
+<mat-dialog-content class="mat-typography">
+  <mat-form-field appearance="fill">
+    <mat-label>Nuevo correo electrónico @upv.es o @upv.edu.es</mat-label>
+    <input matInput [(ngModel)]="correo">
+  </mat-form-field>
+</mat-dialog-content>
+<mat-dialog-actions align="end">
+  <button mat-button [mat-dialog-close]="undefined">Cancelar</button>
+  <button mat-flat-button color="primary" (click)="enviar()">Cambiar correo</button>
+</mat-dialog-actions>

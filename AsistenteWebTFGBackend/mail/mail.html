@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang=\"es\">
+<head>
+  <meta charset=\"UTF-8\">
+  <meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\">
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
+  <style>
+    *, html {
+      margin: 0;
+      padding: 0;
+      font-family: monospace;
+    }
+    .nav {
+      padding: 10px;
+      font-weight: bold;
+      background-color: #009688;
+      color: #fff;
+    }
+    .colum {
+      padding: 20px;
+      text-align: center;
+    }
+    .button {
+      padding: 10px;
+      margin: 10px;
+    }
+
+    .button a {
+      font-weight: bold;
+      background-color: #009688;
+      color: #fff;
+      padding: 10px;
+      text-decoration: none;
+      border-radius: 35px;
+    }
+    .text {
+      padding: 5px;
+      margin: 5px;
+    }
+
+    .text a {
+      padding: 5px;
+      text-decoration: none;
+    }
+  </style>
+  <title>Madrina</title>
+</head>
+<body>
+  <div class=\"nav\">Madrina</div>
+  <div class=\"colum\">
+    <div>Pulsa en el siguiente bot&oacute;n para restablecer la contrase&ntilde;a</div>
+    <div class=\"button\">
+      <a href=\"$domain$/#/password?u=$userID$&t=$token$\">Pulsa para restablecer la contrase&ntilde;a</a>
+    </div>
+    <div>En caso de que no pueda acceder, use el siguiente enlace:</div>
+    <div class=\"text\">
+      <a href=\"$domain$/#/password?u=$userID$&t=$token$\">$domain$/#/password?u=$userID$&t=$token$</a>
+    </div>
+  </div>
+</body>
+</html>

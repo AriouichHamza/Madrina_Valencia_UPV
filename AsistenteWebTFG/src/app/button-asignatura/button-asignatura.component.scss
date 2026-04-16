@@ -1,0 +1,21 @@
+.bt-asignatura {
+  min-width: 102px;
+  width: fit-content;
+  margin-right: 16px;
+  margin-bottom: 16px;
+}
+
+.bt-asignatura-left {
+  color: white;
+  border-bottom-right-radius: 0;
+  border-top-right-radius: 0;
+  margin-right: 2px;
+}
+
+.bt-asignatura-right {
+  color: white;
+  min-width: 36px;
+  padding: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}

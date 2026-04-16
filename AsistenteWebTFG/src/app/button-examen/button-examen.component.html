@@ -1,0 +1,31 @@
+<div>
+  <button mat-flat-button class="bt-examen" [style.border-color]="examen.color" [disabled]="examen.disabled" (click)="openGeneric()">
+    <div class="examen-progress" *ngIf="examen.progress != undefined && examen.progress.active">
+      <div [matTooltip]="infoLeer" matTooltipPosition="above">Leer</div>
+      <div>{{ getPerc( examen.progress.leer, examen.progress.leerTotal ) }}</div>
+      <div [matTooltip]="infoSubir" matTooltipPosition="above">Subir</div>
+      <div>{{ getPerc( examen.progress.subir, examen.progress.subirTotal ) }}</div>
+      <div [matTooltip]="infoProcesar" matTooltipPosition="above">Procesar</div>
+      <div>{{ getPerc( examen.progress.procesar, examen.progress.procesarTotal ) }}</div>
+      <div [matTooltip]="infoCrear" matTooltipPosition="above">Crear</div>
+      <div>{{ getPerc( examen.progress.crear, examen.progress.crearTotal ) }}</div>
+      <div [matTooltip]="infoGenerar" matTooltipPosition="above">Generar</div>
+      <div>{{ getPerc( examen.progress.generar, examen.progress.generarTotal ) }}</div>
+      <div [matTooltip]="infoPreparar" matTooltipPosition="above">Preparar</div>
+      <div>{{ getPerc( examen.progress.preparar, examen.progress.prepararTotal ) }}</div>
+    </div>
+    <div class="examen-info" *ngIf="examen.progress == undefined">
+      <div class="examen-fecha">{{dateToString(examen.fecha)}}</div>
+      <div class="examen-center">
+        <div class="examen-nombre"
+          [ngClass]="{ 'fs14' : examen.nombre.length > 16, 'fs10' : examen.nombre.length > 26 }">{{examen.nombre}}</div>
+        <div class="examen-acronimo" [style.color]="examen.color">{{examen.acronimo}}</div>
+        <div *ngIf = "examen.isAvanzado" > Automatizado</div>
+        <div *ngIf = "!examen.isAvanzado" > Clásico</div>
+      </div>
+      <div class="examen-corregidos">{{examen.calificados}}</div>
+    </div>
+    
+  </button>
+  
+</div>

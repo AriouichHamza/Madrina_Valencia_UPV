@@ -1,0 +1,53 @@
+
+.dialog-header {
+  margin-bottom: 18px;
+  color: var(--primary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.edit-asignatura-row-inputs {
+  display: grid;
+  grid-template-columns: auto 100px 60px;
+  column-gap: 18px;
+}
+
+.edit-asignatura-row-colors {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.edit-asignatura-cell-color {
+  padding: 4px;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+}
+
+.edit-asignatura-cell-color-active {
+  background-color: var(--primary);
+}
+
+.edit-asignatura-cell-color:hover {
+  cursor: pointer;
+}
+
+.edit-asignatura-circle-color {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+}
+
+.edit-asignatura-row-alumnos input {
+  display: none;
+}
+
+.edit-asignatura-footer-spinner {
+  animation: mymove linear 5s infinite;
+}
+@keyframes mymove {
+  100% {transform: rotate(-360deg);}
+}

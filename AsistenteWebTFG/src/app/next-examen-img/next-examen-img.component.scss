@@ -1,0 +1,17 @@
+.next-examen-img-container {
+  margin-top: 20px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  height: 100%;  // Hacer que el contenedor ocupe el 100% del espacio asignado
+}
+
+.examen-img {
+  max-width: 100%;  // Ajusta la imagen al ancho del contenedor
+  max-height: 100%; // Ajusta la imagen a la altura del contenedor
+  object-fit: contain; // Asegura que la imagen mantenga su proporción
+}
+.bordered{
+  border: 1px solid rgba(0,0,0,.12);
+}

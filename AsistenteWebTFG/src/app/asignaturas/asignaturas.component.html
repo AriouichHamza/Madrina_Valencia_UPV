@@ -1,0 +1,58 @@
+<!--app-full-animation [open]="!loadComplete"></app-full-animation-->
+<app-navbar [settings]="true" ></app-navbar>
+<div class="asignaturas-left">
+	<div class="asignatura-navbar">
+		<button mat-flat-button color="primary" (click)="cursoNew()">
+			<mat-icon>add</mat-icon>
+			<span>Nuevo curso</span>
+		</button>
+		<div class="toolbar-spacer"></div>
+		<button mat-icon-button color="primary" (click)="ordenar(1)" [disabled]="orderType==1" >
+			<mat-icon>expand_less</mat-icon>
+		</button>
+		<button mat-icon-button color="primary" (click)="ordenar(2)" [disabled]="orderType==2">
+			<mat-icon>expand_more</mat-icon>
+		</button>
+		<button mat-icon-button color="primary" (click)="ordenar(3)" [disabled]="orderType==3">
+			<mat-icon>text_rotation_down</mat-icon>
+		</button>
+		<button mat-icon-button color="primary" (click)="ordenar(4)" [disabled]="orderType==4">
+			<mat-icon>text_rotate_up</mat-icon>
+		</button>
+	</div>
+
+	<div class="curso" *ngFor="let curso of cursos">
+		<div class="curso-navbar">
+			<div class="curso-label">{{curso.curso}}</div>
+			<div class="curso-spacer"></div>
+			<button mat-icon-button color="primary" (click)="curso.visible=!curso.visible">
+				<mat-icon *ngIf="curso.visible">visibility</mat-icon>
+				<mat-icon *ngIf="!curso.visible">visibility_off</mat-icon>
+			</button>
+		</div>
+		<div *ngIf="curso.visible" class="curso-asignaturas">
+			<app-button-asignatura *ngFor="let asignatura of curso.asignaturas"
+				[asignatura]="asignatura"
+				(newExamen)="examenNew(asignatura)"
+				(editAsignatura)="asignaturaEdit(curso.curso, asignatura)"
+				(deleteAsignatura)="asignaturaDelete(asignatura)"
+				(filterAsignatura)="asignaturaFilter($event, asignatura, curso.examenes)">
+			</app-button-asignatura>
+			<button mat-flat-button color="primary" class="bt-nueva-asignatura" (click)="asignaturaNew(curso.curso)">
+				<mat-icon>add</mat-icon>
+			</button>
+		</div>
+		<div *ngIf="curso.visible" class="curso-examenes">
+			<div *ngFor="let examen of curso.examenes">
+				<app-button-examen *ngIf="examen.visible"
+					[examen]="examen"
+					(openExamen)="examenOpen(examen, 0)"
+					(openExamenAvanzado) ="examenOpen(examen, 1)"
+					
+					>
+					
+				</app-button-examen>
+			</div>
+		</div>
+	</div>
+</div>

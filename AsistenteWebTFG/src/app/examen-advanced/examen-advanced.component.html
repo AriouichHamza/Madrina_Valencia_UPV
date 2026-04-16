@@ -1,0 +1,206 @@
+<app-navbar [back]="true" [settings]="true"></app-navbar>
+
+<div class="loading-overlay" *ngIf="loading">
+	<mat-spinner></mat-spinner>
+	<div class= "loading-overlay-progress">
+		{{ loadingProgress }}%  {{ loadingState }}
+	</div>
+</div>
+
+<div class="examen-main" [ngClass]="{'no-interaction': loading}">
+	<div class="examen-main-limiter">
+		<div class="examen-img" #imgContainer>
+			<div class="examen-img-container">
+				<app-image-zoom [fullImage]="imgs[imgsPos-1]" [containerHeight]="imgHeight"></app-image-zoom>
+				<!--img [src]="imgs[imgsPos-1]" [height]="imgHeight"-->
+
+			</div>
+			<div class="examen-img-nav">
+				<mat-form-field class="examen-img-nav-input" appearance="outline">
+					<mat-label style="color:#e7472c">P.ini</mat-label>
+					<input matInput [(ngModel)]="pIni" disabled>
+				</mat-form-field>
+				<button mat-icon-button color="primary" class="examen-img-nav-bt-simple" (click)="pIni=imgsPos">
+					<mat-icon>add_link</mat-icon>
+				</button>
+				<button mat-icon-button color="primary" class="examen-img-nav-button" (click)="pdfUp()">
+					<mat-icon>keyboard_arrow_up</mat-icon>
+				</button>
+				<!-- <div class="examen-img-nav-pos">{{imgsPos}}/{{imgs.length}}</div> -->
+				<div style="display: flex;">
+					<mat-form-field class="examen-img-nav-input" appearance="outline">
+						<mat-label>Pág.</mat-label>
+						<input name="currentpage" matInput [ngModel]="imgsPos"
+							(ngModelChange)="selectPageChange($event)" matInput (ngModel)="imgsPos">
+						<!--(ngModelChange)="selectPageChange($event)" -->
+						<!-- type="number" -->
+					</mat-form-field>
+					<mat-form-field class="examen-img-nav-input" appearance="outline">
+						<mat-label> de </mat-label>
+						<input matInput [(ngModel)]="imgs.length" disabled>
+					</mat-form-field>
+				</div>
+				<button mat-icon-button color="primary" class="examen-img-nav-button" (click)="pdfDown()">
+					<mat-icon>keyboard_arrow_down</mat-icon>
+				</button>
+				<button mat-icon-button color="primary" class="examen-img-nav-bt-simple" (click)="pFin=imgsPos">
+					<mat-icon>add_link</mat-icon>
+				</button>
+				<mat-form-field class="examen-img-nav-input" appearance="outline">
+					<mat-label style="color:#7e3022">P.fin</mat-label>
+					<input matInput [(ngModel)]="pFin" disabled>
+				</mat-form-field>
+
+				<div class="next-examen-img">
+					<app-next-examen-img #imgNextExamenComponent [containerHeight]="imgHeight*0.2">
+					</app-next-examen-img>
+				</div>
+				<div *ngIf="selectedRow.fin == imgs.length">
+					FIN DEL EXAMEN
+				</div>
+			</div>
+		</div>
+
+		<div class="examen-control">
+			<div class="examen-control-header" id="controlHeader">
+				<div class="toolbar-label examen-header">
+					<div class="examen-header-info">
+						<div>{{examen.curso}}</div>
+						<div [style.color]="examen.color">{{examen.acronimo}}</div>
+						<div>{{examen.nombre}}</div>
+					</div>
+				</div>
+				<div class="examen-stats-container">
+					<div class="examen-stats-item">
+						<div class="examen-stats-item-label">Verificados/Sin verificar</div>
+						<div class="examen-stats-item-value">{{verificados}} / {{sinVerificar}}</div>
+					</div>
+					<div class="button-crear-alumno-container">
+						<button mat-button color="primary" (click)="editCalificadoFromButton()" class="bordered-btn">
+							Añadir nuevo alumno
+							<mat-icon class="icono-add-alumno">add</mat-icon>
+						</button>
+					</div>
+				</div>
+				<div class="examen-calificar" #examenCalificar>
+					<div class="calificar-autocomplete-column">
+						<mat-form-field class="calificar-autocomplete" appearance="outline">
+							<mat-label>Apellidos, Nombre [DNI]</mat-label>
+							<input type="text" id="controlNombre" #nombreInput matInput
+								[formControl]="autocompleteControl" [(ngModel)]="alumnoLabel" [matAutocomplete]="auto"
+								(keydown)="focusNext($event, 1)" (focus)="selectText(nombreInput)"
+								[matTooltip]="LABEL_ALUMNO" matTooltipPosition="below">
+							<mat-autocomplete autoActiveFirstOption #auto="matAutocomplete">
+								<mat-option *ngFor="let alumno of filteredAlumnos | async" [value]="alumno">
+									{{alumno}}
+								</mat-option>
+							</mat-autocomplete>
+							<mat-hint *ngIf="errorCalificar.length > 0"
+								class="calificar-error">{{errorCalificar}}</mat-hint>
+						</mat-form-field>
+					</div>
+					<mat-form-field class="calificar-nota" appearance="outline">
+						<mat-label>Nota</mat-label>
+						<input matInput id="controlNota" #notaInput [(ngModel)]="nota" (focus)="selectText(notaInput)"
+							(keydown)="focusNext($event, 2)" [matTooltip]="LABEL_NOTA" matTooltipPosition="below">
+					</mat-form-field>
+					<button mat-icon-button id="controlNav" color="primary" class="calificar-nav"
+						(keydown)="focusNext($event, 3)" (mousedown)="pdfFinDown()" [matTooltip]="LABEL_NAV"
+						matTooltipPosition="above">
+						<mat-icon>unfold_more</mat-icon>
+					</button>
+					<button mat-icon-button id="controlSave" color="primary" class="calificar-save"
+						(click)="sendCalificado()" (keydown)="focusNext($event, 0)" [matTooltip]="LABEL_SAVE"
+						matTooltipPosition="above" [disabled]="disabledSendButton">
+						<mat-icon>save</mat-icon>
+					</button>
+				</div>
+			</div>
+			<div class="examen-calificados" [style.height]="tableHeight" #examenCalificados>
+				<table mat-table [dataSource]="calificadosSource" matSort (keydown)="handleKeydownOnTable($event)">
+					<ng-container matColumnDef="dni">
+						<th mat-header-cell *matHeaderCellDef mat-sort-header> DNI </th>
+						<td mat-cell *matCellDef="let calificado"> {{calificado.dni}} </td>
+					</ng-container>
+
+					<ng-container matColumnDef="apellidos">
+						<th mat-header-cell *matHeaderCellDef mat-sort-header> Apellidos </th>
+						<td mat-cell *matCellDef="let calificado"> {{calificado.apellidos}} </td>
+					</ng-container>
+
+					<ng-container matColumnDef="nombre">
+						<th mat-header-cell *matHeaderCellDef mat-sort-header> Nombre </th>
+						<td mat-cell *matCellDef="let calificado"> {{calificado.nombre}} </td>
+					</ng-container>
+
+					<ng-container matColumnDef="nota">
+						<th mat-header-cell *matHeaderCellDef mat-sort-header> Nota </th>
+						<td mat-cell *matCellDef="let calificado"> {{calificado.nota}} </td>
+					</ng-container>
+
+					<ng-container matColumnDef="ini">
+						<th mat-header-cell *matHeaderCellDef mat-sort-header> P. ini </th>
+						<td mat-cell *matCellDef="let calificado"> {{calificado.ini}} </td>
+					</ng-container>
+
+					<ng-container matColumnDef="fin">
+						<th mat-header-cell *matHeaderCellDef mat-sort-header> P. fin </th>
+						<td mat-cell *matCellDef="let calificado"> {{calificado.fin}} </td>
+					</ng-container>
+
+					<ng-container matColumnDef="D.">
+						<th mat-header-cell *matHeaderCellDef mat-sort-header> N. Pags </th>
+						<td mat-cell *matCellDef="let calificado"> {{calificado.fin - calificado.ini}} </td>
+					</ng-container>
+
+					<ng-container matColumnDef='verificado'>
+						<th mat-header-cell *matHeaderCellDef mat-sort-header> Verificado </th>
+						<td mat-cell *matCellDef="let element">
+							<mat-icon *ngIf="element.verificado" style="color: green">check_circle</mat-icon>
+							<mat-icon *ngIf="!element.verificado" style="color: red">cancel</mat-icon>
+						</td>
+					</ng-container>
+					
+					<ng-container matColumnDef="edit">
+						<th mat-header-cell *matHeaderCellDef> Editar </th>
+						<td mat-cell *matCellDef="let calificado">
+							<button mat-icon-button color="primary" (click)="editCalificado(calificado)" tabindex="-1">
+								<mat-icon>edit</mat-icon>
+							</button>
+						</td>
+					</ng-container>
+					
+					<tr mat-header-row *matHeaderRowDef="calificadosHeader; sticky: true"></tr>
+					<tr mat-row *matRowDef="let calificado; columns: calificadosHeader;" #tableRow
+						[class.selected]="calificado.id === selectedRow.id"
+						(click)="onRowClickEvent($event,calificado )" (keydown)="focusNextOnRow($event, calificado)">
+					</tr>
+				</table>
+			</div>
+			<div class="examen-footer" id="controlFooter">
+				<button mat-flat-button color="warn" (click)="examenDelete()">
+					<mat-icon>delete</mat-icon>
+					<span>Eliminar</span>
+				</button>
+				<div class="errors-detected">
+					<div *ngIf="erroresPrediccion">
+						Errores en p. {{erroresPrediccion}}
+						
+					</div>
+					<div *ngIf="intersecciones">
+					Intersecciones en p. {{ intersecciones }}
+					</div>
+					<div *ngIf="discontinuidades">
+					Discontinuidades en p. {{ discontinuidades }}
+					</div>
+				
+				</div>
+				<button mat-flat-button color="primary" (click)="requestZIP()" [disabled]="waitResponse">
+					<mat-icon *ngIf="!waitResponse">file_download</mat-icon>
+					<mat-icon *ngIf="waitResponse" class="wait-spinner">sync</mat-icon>
+					<span> {{ downloadPerc == 0 ? 'Descargar examen' : (downloadPerc + ' %') }}</span>
+				</button>
+			</div>
+		</div>
+	</div>
+</div>

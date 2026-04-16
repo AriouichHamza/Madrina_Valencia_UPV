@@ -1,0 +1,234 @@
+.examen-main {
+  height: 85%;
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+}
+
+.examen-main-limiter {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  height: 100%;
+  padding: 16px;
+  column-gap: 32px;
+}
+
+.examen-img {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 16px;
+}
+
+.examen-img-nav {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 10vw;
+}
+
+.examen-img-nav-input {
+  width: 50px;
+  text-align: center;
+}
+
+.examen-img-nav-input::ng-deep .mat-form-field-wrapper {
+  padding-top: 0px;
+  padding-bottom: 0px;
+}
+
+.examen-img-nav-button {
+  margin-bottom: 8px;
+  width: 50px;
+  height: 50px;
+  border: 1px solid rgba(0,0,0,.12);
+}
+
+.examen-img-nav-bt-simple {
+  margin-bottom: 8px;
+}
+
+.examen-img-nav-pos {
+  color: rgba(0,0,0,.6);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.examen-control {
+  width: fit-content;
+}
+
+.examen-header {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.examen-header-info {
+  width: fit-content;
+  display: grid;
+  grid-template-columns: auto auto auto;
+  column-gap: 18px;
+}
+
+.config-input {
+  width: 60px;
+  text-align: center;
+  margin-right: 18px;
+}
+
+.examen-calificar {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.calificar-error {
+  color: var(--warm);
+}
+
+.calificar-autocomplete-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.calificar-autocomplete {
+  width: 400px;
+  margin-right: 18px;
+}
+
+.calificar-nota {
+  width: 60px;
+  text-align: center;
+  margin-right: 18px;
+}
+
+.calificar-nav {
+  margin-top: 0.25em;
+  margin-bottom: 18px;
+  width: 50px;
+  height: 50px;
+  border: 1px solid rgba(0,0,0,.12);
+  margin-right: 18px;
+}
+
+.calificar-save {
+  margin-top: 0.25em;
+  margin-bottom: 18px;
+  width: 50px;
+  height: 50px;
+  border: 1px solid rgba(0,0,0,.12);
+}
+
+.examen-calificados {
+  overflow-y: auto;
+  height: 400px;
+  margin-bottom: 16px;
+}
+
+.examen-calificados table {
+  width: 100%;
+  
+}
+.examen-calificados td {
+  padding: 5px;
+}
+
+.examen-footer {
+  display: flex;
+  flex-wrap: wrap; /* Permite que los elementos se envuelvan en múltiples líneas si es necesario */
+  align-items: center; /* Alinea los elementos verticalmente en el centro */
+  gap: 10px; /* Espacio entre los elementos */
+  padding: 10px; /* Espacio interno alrededor del contenido */
+  border-top: 1px solid #ddd; /* Línea separadora superior opcional */
+  justify-content: space-between;
+}
+
+.examen-footer button {
+  margin-left: 16px;
+}
+
+.errors-detected {
+  color: red; /* Cambia el color del texto a rojo */
+  font-weight: bold; /* Opcional: hace el texto más grueso */
+  margin-top: 10px; /* Espacio superior opcional para separar de otros elementos */
+}
+
+.errors-detected div {
+  margin-bottom: 5px; /* Espacio inferior entre cada sección de error, intersección, etc. */
+}
+
+.wait-spinner {
+  animation: mymove linear 5s infinite;
+}
+.selected {
+  background-color: rgba(37, 163, 247, 0.555);
+}
+.examen-calificados tr:hover {
+  background-color: rgba(68, 65, 65, 0.137);
+  cursor: pointer;
+}
+@keyframes mymove {
+  100% {transform: rotate(-360deg);}
+}
+
+.download-link {
+  display: none;
+}
+
+
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+}
+
+.no-interaction {
+  pointer-events: none;
+  opacity: 0.5;  
+}
+
+.examen-stats-item {
+  display: flex;
+  align-items: center; 
+}
+
+.examen-stats-item-label {
+  margin-right: 10px;
+}
+
+.examen-stats-item-value {
+  font-weight: bold; 
+}
+.examen-stats-container{
+  display: flex;
+  flex-direction: row;
+
+  margin-top: 20px;
+  justify-content: space-between;
+}
+.bordered-btn {
+  border: 2px solid rgb(0, 150, 136); 
+  border-radius: 5px; 
+  padding: 5px 10px; 
+  margin-left: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+.icono-add-alumno{
+  margin-bottom: 3px;
+}
+.loading-overlay-progress{
+  margin-left: 10px;
+}

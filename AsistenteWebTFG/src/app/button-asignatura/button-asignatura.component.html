@@ -1,0 +1,29 @@
+<div class="bt-asignatura" [matTooltip]="asignatura.nombre" matTooltipPosition="above">
+  <button class="bt-asignatura-left"
+    mat-flat-button
+    (click)="emitFilter()"
+    [style.background-color]="asignatura.color"
+    [disabled]="asignatura.disabled"
+    >{{asignatura.acronimo}}</button>
+  <button class="bt-asignatura-right"
+    mat-flat-button
+    [matMenuTriggerFor]="asignaturaMenu"
+    [style.background-color]="asignatura.color"
+    [disabled]="asignatura.disabled"
+    ><mat-icon>expand_more</mat-icon>
+  </button>
+  <mat-menu #asignaturaMenu="matMenu">
+    <button mat-menu-item (click)="emitNew()">
+      <mat-icon>add</mat-icon>
+      <span>Nuevo examen</span>
+    </button>
+    <button mat-menu-item (click)="emitEdit()">
+      <mat-icon>edit</mat-icon>
+      <span>Ver asignatura</span>
+    </button>
+    <button mat-menu-item (click)="emitDelete()">
+      <mat-icon>delete</mat-icon>
+      <span>Eliminar asignatura</span>
+    </button>
+  </mat-menu>
+</div>

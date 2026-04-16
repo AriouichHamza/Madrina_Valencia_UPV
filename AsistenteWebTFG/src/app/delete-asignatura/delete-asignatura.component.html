@@ -1,0 +1,8 @@
+<h2 mat-dialog-title>Eliminar la asignatura</h2>
+<mat-dialog-content class="mat-typography">
+  <p>¿Estás muy seguro de querer eliminar la asignatura {{asignatura.nombre}}?</p>
+</mat-dialog-content>
+<mat-dialog-actions align="end">
+  <button mat-button [mat-dialog-close]="undefined">Cancelar</button>
+  <button mat-flat-button color="warn" (click)="delete()">Eliminar</button>
+</mat-dialog-actions>

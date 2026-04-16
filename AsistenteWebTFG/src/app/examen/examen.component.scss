@@ -1,0 +1,151 @@
+.examen-main {
+  height: calc(100% - 64px);
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+}
+
+.examen-main-limiter {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  height: calc(100% - 32px);
+  padding: 16px;
+  column-gap: 32px;
+}
+
+.examen-img {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 16px;
+}
+
+.examen-img-nav {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.examen-img-nav-input {
+  width: 50px;
+  text-align: center;
+}
+
+.examen-img-nav-input::ng-deep .mat-form-field-wrapper {
+  padding-top: 0px;
+  padding-bottom: 0px;
+}
+
+.examen-img-nav-button {
+  margin-bottom: 8px;
+  width: 50px;
+  height: 50px;
+  border: 1px solid rgba(0,0,0,.12);
+}
+
+.examen-img-nav-bt-simple {
+  margin-bottom: 8px;
+}
+
+.examen-img-nav-pos {
+  color: rgba(0,0,0,.6);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.examen-control {
+  width: fit-content;
+}
+
+.examen-header {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.examen-header-info {
+  width: fit-content;
+  display: grid;
+  grid-template-columns: auto auto auto;
+  column-gap: 18px;
+}
+
+.config-input {
+  width: 60px;
+  text-align: center;
+  margin-right: 18px;
+}
+
+.examen-calificar {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.calificar-error {
+  color: var(--warm);
+}
+
+.calificar-autocomplete-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.calificar-autocomplete {
+  width: 400px;
+  margin-right: 18px;
+}
+
+.calificar-nota {
+  width: 60px;
+  text-align: center;
+  margin-right: 18px;
+}
+
+.calificar-nav {
+  margin-top: 0.25em;
+  margin-bottom: 18px;
+  width: 50px;
+  height: 50px;
+  border: 1px solid rgba(0,0,0,.12);
+  margin-right: 18px;
+}
+
+.calificar-save {
+  margin-top: 0.25em;
+  margin-bottom: 18px;
+  width: 50px;
+  height: 50px;
+  border: 1px solid rgba(0,0,0,.12);
+}
+
+.examen-calificados {
+  overflow-y: auto;
+  height: 400px;
+  margin-bottom: 16px;
+}
+
+.examen-calificados table {
+  width: 100%;
+}
+
+.examen-footer {
+  text-align: right;
+}
+
+.examen-footer button {
+  margin-left: 16px;
+}
+
+.wait-spinner {
+  animation: mymove linear 5s infinite;
+}
+@keyframes mymove {
+  100% {transform: rotate(-360deg);}
+}
+
+.download-link {
+  display: none;
+}

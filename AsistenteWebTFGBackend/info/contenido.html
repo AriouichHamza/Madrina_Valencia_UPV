@@ -1,0 +1,250 @@
+<head>
+<title>Ayuda Madrina</title>
+
+
+<style>
+input {
+  border-style: solid;
+  border-color: coral;
+}
+
+type
+{
+ font-weight: bold;
+ color: red;
+}
+
+
+.imgxl
+{
+width: 90%;
+margin-bottom: 10px;
+
+}
+
+.imgl
+{
+width: 75%;
+margin-bottom: 10px;
+}
+
+.imgm
+{
+width: 45%;
+margin-bottom: 10px;
+}
+
+</style>
+
+</head>
+ <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<body style="background-color:#b5e6ff;">
+
+<h3 id=registrarse> Registrarse.</h3>
+
+Para registrarse, es interesante utilizar un correo electrónico de los siguientes dominios: <br>
+<ol>
+<ul>@upv.es</ul>
+<ul>@upv.edu.es</ul>
+<ul>@upvnet.upv.es</ul>
+<ul>Correos departamentales @<em>departamento</em>.upv.es</ul>
+</ol>
+
+<h3 id=crear_curso> Crear curso.</h3>
+
+Para crear un nuevo curso, sólo tienes que hacer click en el botón<br>
+<img src="imgs/boton_nuevo_curso.png" alt="+Nuevo curso" width="20%"/><br>
+
+<h3 id=crear_asignatura> Crear asignatura.</h3>
+Para crear una asignatura necesitas la lista de alumnos en formato csv. La recomendación es descargarla desde Padrino, pero sirve cualquier lista que contenga al menos el DNI, el nombre y apellidos de los alumnos, sin importar el formato.<br>
+Para crear una nueva asignatura haz click en el botón + que aparece debajo del identificador de curso<br>
+<img src="imgs/boton_nueva_asignatura.png" alt="+" width="5%"/><br><br>
+Al hacer click aparece el siguiente cuadro de dialogo.<br>
+<img src="imgs/crear_asignatura.png" class="imgl"/><br>
+En la primera línea introduce el nombre completo de la asignatura y el acrónimo que quieras usar. Si usas espacios en blanco en el acrónimo se sustituiran por "_".<br>
+Puedes asignar el color que se usará para diferenciar las asignaturas que tengas en el mismo curso.<br>
+A continuación con el botón "Cargar alumnos" carga la lista de alumnos desde un fichero csv.<br>
+Cuando cargues la lista, podrás ver una previsualización del fichero en el cuadro CSV Texto, como se muestra en la siguiente imagen.<br>
+<img src="imgs/crear_asignatura2.png" class="imgl"/><br>
+Ahora es el momento de configurar las características del fichero. Usa el scroll para recorrer la lista y comprueba si hay acentos o símbolos extraño.<br>
+Si es así, cambia la "Codificación" hasta que veas correctamente los acentos.<br> 
+También tienes que elegir el separador de campos, normalmente es un ;<br>
+También has de decir si la lista tiene cabeceras.<br>
+Si has descargado la lista de Padrino, la codificación es Latin1, el separador es ; y sí hay cabecera.<br>
+La siguiente imagen muestra la configuración de Padrino:<br>
+<img src="imgs/crear_asignatura3.png" class="imgl"/><br>
+Ahora sólo queda asignar el DNI, los apellidos y el nombre. Elige en cada campo la columna correspondiente.<br>
+Puedes hacer todas las pruebas que quieras, y puedes escoger la misma columna del fichero para diferentes campos.<br>
+Si usas la lista de Padrino, has de de elegir la columna "nombre" para el apellido1, apellido 2 y nombre, como puedes ver en la siguiente imagen:<br>
+<img src="imgs/crear_asignatura7.png" class="imgl"/><br>
+Puedes usar el scroll para ver el resultado de la asignación, y cuando esté correcto, haz click en el botón "Crear Asignatura".
+
+<h3 id=crear_examen>Crear examen.</h3>
+Para crear un nuevo examen haz click en la flecha abajo junto al nombre de la asignatura y aparecerá un desplegable:
+<br><img src="imgs/nuevo_examen.png" width="30%"  /><br><br>
+Haciendo click en nuevo examen aparecerá el siguiente cuadro de dialogo, donde has de introducir:<br>
+- El nombre del examen. ¡Atención! Este nombre se añadirá a los nombres de los ficheros que se entregarán a los alumnos. Si usas espacios en blanco en el nombre del examen se sustituiran por "_".<br>
+- La fecha del examen.<br>
+- El o los ficheros PDF con los exámenes corregidos de los alumnos, haciendo click en el botón "cargar exámenes".
+Los ficheros se pueden reordenar arrastrándolos.<br>
+<br><img src="imgs/nuevo_examen3.png" class="imgm"  /><br>
+Por último, haz click en el botón "Crear examen".<br>
+Al hacer click en el botón, aparece un cuadro mostrando el progreso de carga de los exámenes, y posterioremente aparecerá un cuadro con información del examen y el número de exámenes clasificados.
+<br><img src="imgs/nuevo_examen4.png" class="imgm"/>
+<br><img src="imgs/nuevo_examen4.png" class="imgm"/><br>
+<h3 id=clasificar_examenes>Clasificar exámenes.</h3>
+Para clasificar los exámenes haz click en el cuadro del examen.<br>
+¡Importante! La carga de todas las páginas del examen puede requerir cierto, y debes esperar a que acabe, cuando el cuadro de número de páginas deje de incrementarse.<br>
+Aunque el procedimiento de asignar las páginas a un alumno es muy similar si todos los exámenes tienen el mismo número de hojas o diferente, vamos a verlo de forma separada.
+<h3 id=clasificar_fijo>Número de páginas fijo.</h3>
+Si TODOS (excepto uno o dos) de exámenes tienen el mismo número de página, el proceso de clasificación será más rápido. <br>
+El primer paso es escribir el número de páginas en el cuadro de entrada y activar el marcador de página final automático.<br>
+<img src="imgs/clasificar1.png" class="imgl"/><br>
+El segundo paso es posicionar la lupa. En la esquina superior izquierda puede apreciarse un marco rectangular que recorta el examen.<br>
+Haciendo click en este marco puede ubicarse en el lugar deseado, y fijarlo con un segundo click. Se puede desactivar con un nuevo click, activar nuevamente con otro click.<br>
+<img src="imgs/clasificar2.png" class="imgl"/><br>
+Para comenzar a clasificas exámenes, hacemos click en el campo de Apellidos, y aparecerá la lista de todos los alumnos.<br>
+<img src="imgs/clasificar3.png" class="imgl"/><br>
+Tecleamos el apellido del alumno (puedes omitir los acentos), y la lista se actualizará mostrando todos los alumnos que contengan la secuencia escrita en sus apellidos o nombre. Esto permite buscar por cualquier apellido, nombre o DNI.<br>
+<img src="imgs/clasificar4.png" class="imgl"/><br>
+Podemos seguir tecleando hasta que solo quede el alumno deseado, y con la tecla INTRO lo seleccionamos, <br>
+o podemos usar las teclas &#8595; y &#8593; para posicionarnos en el alumno y seleccionarlo con la tecla INTRO.<br>
+Si no encontramos el alumno, se puede dejar en blanco el nombre y cuando descarguemos los exámenes aparecerán como "XXXXXXXX_Sin nombre_N".<br>
+<img src="imgs/clasificar5.png" class="imgl"/><br>
+Pulsamos la tecla TAB y escribimos la nota del alumno.<br>
+Volvemos a pulsar la tecla TAB, DOS veces, para posicionarnos en el símbolo del disquete. Pulsamos INTRO y el examen es asignado al alumno.<br>
+El visor de exámenes se posiciona en la primera página del siguiente examen, y el cursor en el campo de apellidos para clasificar el siguiente examen.<br>
+<img src="imgs/clasificar6.png" class="imgl"/><br> 
+En la tabla inferior se pueden ver los exámenes clasificados con su información. Es posible ordenar esta tabla por los diferentes campos, y editar una clasificación.<br>
+<img src="imgs/clasificar7.png" class="imgl"/><br> 
+
+El proceso de clasificación puede interrumpirse (salir del examen e incluso apagar el ordenador) y continuará donde se había quedado.<br>
+También es posible editar una clasificación. Se explica con detalle en la sección "Editar examen".<br>
+Una vez clasificados o asignados todos los exámenes, hacemos click en el botón descargar, y guardamos el zip resultante. <br>
+En la sección "Publicar notas y exámenes" se explica como utilizar este zip.
+<h3 id=clasificar_variable>Número de páginas variable.</h3>
+Cuando los exámenes difieren en el número de páginas, el proceso de clasificación es un poco más lento, pues requiere más interacción.<br>
+Dejarmos el cuadro de páginas en 0 y SIN activar el marcador de página final automático.<br>
+A continuación posicionamos la lupa. En la esquina superior izquierda puede apreciarse un marco rectangular que recorta el examen.<br>
+Haciendo click en este marco puede ubicarse en el lugar deseado, y fijarlo con un segundo click. Se puede desactivar con un nuevo click, activar nuevamente con otro click.<br>
+<img src="imgs/clasificar_dif_1.png" class="imgl"/><br>
+Para comenzar a clasificas exámenes, hacemos click en el campo de Apellidos, y aparecerá la lista de todos los alumnos.<br>
+<img src="imgs/clasificar_dif_1bis.png" class="imgl"/><br>
+Tecleamos el apellido del alumno (puedes omitir los acentos), y la lista se actualizará mostrando todos los alumnos que contengan la secuencia escrita en sus apellidos o nombre. Esto permite buscar por cualquier apellido, nombre o DNI.<br>
+<img src="imgs/clasificar_dif_2bis.png" class="imgl"/><br>
+Podemos seguir tecleando hasta que solo quede el alumno deseado, y con la tecla INTRO lo seleccionamos, <br>
+o podemos usar las teclas &#8595; y &#8593; para posicionarnos en el alumno y seleccionarlo con la tecla INTRO.<br>
+Si no encontramos el alumno, se puede dejar en blanco el nombre y cuando descarguemos los exámenes aparecerán como "XXXXXXXX_Sin nombre_N".<br>
+<img src="imgs/clasificar_dif_3.png" class="imgl"/><br>
+Pulsamos la tecla TAB y escribimos la nota del alumno.<br>
+Volvemos a pulsar la tecla TAB, y nos posicionamos en el CÍRCULO con dos flechas.<br>
+En este momento podemos usar la tecla de flecha abajo (o la tecla s) para avanzar página a página.<br>
+Dejamos de avanzar cuando llegamos a la última página o bien a la primera página del siguiente examen, en cuyo caso<br>
+retrocedemos una página con la tecla de flecha arriba (o la w). La imagen siguiente muestra este caso, donde hemos avanzado una página de más. <br>
+<img src="imgs/clasificar_dif_3bis.png" class="imgl"/><br> 
+Una vez posicionados en la última página del examen, volvemos a pulsar la tecla TAB y nos
+posicinonamos en el símbolo del disquete.<br>
+<img src="imgs/clasificar_dif_4.png" class="imgl"/><br>
+Pulsamos INTRO y el examen es asignado al alumno.<br>
+El visor de exámenes se posiciona en la primera página del siguiente examen, y el cursor en el campo de apellidos para clasificar el siguiente examen.<br>
+<img src="imgs/clasificar_dif_5.png" class="imgl"/><br> 
+Cuando se llega a la última página del último examen, no es posible avanzar más, por lo que pasamos con la tecla TAB al símbolo del disquete <br>
+y apretamos INTRO, guardando el último examen.<br>
+En la tabla inferior se pueden ver los exámenes clasificados con su información. Es posible ordenar esta tabla por los diferentes campos, y editar una clasificación.<br>
+<img src="imgs/clasificar_dif_6.png" class="imgl"/><br> 
+
+El proceso de clasificación puede interrumpirse (salir del examen e incluso apagar el ordenador) y continuará donde se había quedado.<br>
+También es posible editar una clasificación. Se explica con detalle en la sección "Editar examen".<br>
+Una vez clasificados o asignados todos los exámenes, hacemos click en el botón descargar, y guardamos el zip resultante. <br>
+En la sección "Publicar notas y exámenes" se explica como utilizar este zip.
+
+<h3 id=editar_clasificacion>Editar una clasificación.</h3>
+Se puede editar cualquier asignación examen-alumno, y se puede cambiar el alumno, la nota, y las páginas de inicio y final.<br>
+Para editar una clasificación, buscamos el alumno que queremos modificar en la lista inferior, y hacemos click en el lápiz de color verde.<br>
+Se mostrará la primera página del alumno, su nombre, apellidos y nota en los cuadros correspondientes.<br>
+<img src="imgs/editar_1.png" class="imgl"/><br> 
+<ul>
+  <li>Editar página inicial: si queremos editar cuál es la primera página del alumno, hemos de posicionarnos en la páginas deseada.<br>
+  Para ello podemos escribir el número de página al queremos ir en el cuadro "Pag." o usar los botones "arriba" y "abajo" para navegar por el examen.<br>
+  <img src="imgs/editar_2.png"  width="20%"/>Controles para navegar por el examen.<br><br> 
+  Una vez tenemos la primera página en pantalla, hacemos click en el botón con el símbolo + que hay debajo del cuadro "P.ini".<br>
+  <img src="imgs/editar_3.png"  width="15%"/>El botón central asigna la página actual como primera página del examen.<br> <br>
+  Finalmente, hacemos click en el botón del disquete para actualizar la clasificación.<br><br>
+  </li>
+  <li>Editar página final: si queremos editar cuál es la última página del alumno, hemos de posicionarnos en la páginas deseada.<br>
+  Para ello podemos escribir el número de página al queremos ir en el cuadro "Pag." o usar los botones "arriba" y "abajo" para navegar por el examen.<br>
+  <img src="imgs/editar_4.png"  width="20%"/>Controles para navegar por el examen.<br><br> 
+  Una vez tenemos la última página en pantalla, hacemos click en el botón con el símbolo + que hay debajo del cuadro "P.ini".<br>
+  <img src="imgs/editar_5.png"  width="15%"/>El botón central asigna la página actual como última página del examen.<br> <br>
+  Finalmente, hacemos click en el botón del disquete para actualizar la clasificación.<br><br>
+  </li>
+  <li> Editar nombre del alumno o su nota: si lo que queremos es cambiar el nombre del alumno o la nota, sólo hay que editar los campos correspondientes, y después hacer click en el botón del disquete.<br>
+  </ul>
+<h3 id=descargar_todo>Publicar notas y exámenes.</h3>
+Puede que en un futuro la publicación de notas y exámenes sea automática, pero de momento hay que seguir unos sencillos pasos.<br>
+El primer paso es descargar las notas y los exámenes a nuestro ordenador. Para ello hacemos click en el botón descargar.<br>
+<img src="imgs/descargar_1.png"  class="imgm"/><br>
+Dependiendo de la configuración de nuestro navegador, el fichero se guardará en una carpeta predeterminada, nos pedirá la carpeta o intentará abrir el fichero.<br>
+En cualquier caso, es necesario extraer la carpeta con el nombre del examen que hay en el fichero zip.<br>
+<img src="imgs/descargar_2.png"  class="imgxl"/><br>
+Una vez descomprimida la carpeta, accedemos a ella con el explorador de archivos y encontramos dos carpetas más.<br>
+<img src="imgs/descargar_3.png"  class="imgxl"/><br>
+La carpeta csv la utilizaremos para subir las notas a Padrino, y la carpeta exámenes para subir los exámenes de los alumnos al espacio compartido de PoliformaT.<br>
+<h3 id=subir_notas>Subir notas.</h3>
+En la carpeta csv tenemos dos ficheros .csv. <br>
+<img src="imgs/descargar_4.png"  class="imgxl"/><br>
+<ul>
+<li> detalles.csv: tiene toda la información sobre el proceso de la clasificación: dni y nombre de cada alumno, su nota, y las páginas del pdf original que le corresponden.<br>
+Este fichero no lo vamos a utilizar para subir las notas a Padrino, pero puede ser útil en el futuro.<br>
+</li>
+<li> nombre_examen_notas_padrino.csv: este el el fichero que usaremos para importar las nota a Padrino.<br>
+El proceso de importar notas a Padrino es sencillo y está bien guiado. Puedes encontrar una guía detallada <a href="https://wiki.upv.es/confluence/display/MANUALES/Padrino" target="_blank">en el manual</a> en la sección "Importa CSV/EXCEL".<br>
+IMPORTANTE: recomendamos seleccionar la opción "Respetar nota actual".
+</li>
+</ul>
+<h3 id=subir_examenes>Subir exámenes.</h3>
+En la carpeta exámenes tenemos todos los PDFs con los exámenes de los alumnos, y un fichero llamado sube.bat <br>
+<img src="imgs/descargar_5.png"  class="imgxl"/><br>
+Tenemos tres requisitos para subir los exámenes a PoliformaT<br>
+<ul>
+<li> De momento el programa solo funciona en Windows. Esperamos tenerlo en breve para otros operativos. <br>
+Si no tenemos acceso a un ordenador con Windows, podemos copiar la carpeta exámenes a la W y usar Polilabs.<br>
+</li>
+<li> Si no estamos en el campus, es posible subir los exámenes conecntándonos a la VPN, pero si el número de exámenes es elevado, es mejor hacerlo desde un ordenador situado en el campus.<br>
+</li>
+<li> También es necesario abrir una sesión de PoliformaT.<br>
+</li>
+</ul>
+Una vez hemos abierto sesión en PoliformaT, hacemos doble click en sube.bat que nos pedirá que introduzcamos:<br>
+<ul>
+<li> El sitio de PoliformaT de la asignatura. Por ejemplo GRA_11542_2022.
+</li>
+<li> El usuario de PoliformaT que es el DNI (sin la letra).<br>
+</li>
+<li> La contraseña, que es la que utilizamos para acceder a la Intranet.<br>
+Por cierto, el usuario y contraseña viajan directamente a los servidores de la UPV, sin pasar por Madrina ni ningún otro servidor.<br>
+</li>
+</ul>
+No tenemos que cerrar la ventana ni apagar el ordenador hasta que nos aparezca un mensaje diciéndonos que ha terminado.<br>
+El proceso de subidad es lento, y en pantalla aparecerán los exámenes que se van subiendo.<bR>
+<h3 id=falla_zip>El examen no se descarga.</h3>
+Esperemos que no esto no te suceda, pues sabemos lo frustante que es perder el trabajo realizado.<br>
+Pero si después de asignar todos los exámenes el zip no se descarga, no desesperes.<br>
+Manda un correo a amarti@disca.upv.es indicando el coreo que usas, la asignatura y el nombre del examen, <br>
+y si me das permiso intento recuperar el trabajo.<br>
+<h3 id=dos_notas>Necesito poner dos notas.</h3>
+Es posible que en un futuro Madrina pueda gestionar dos notas, pero de momento te proponemos esta solución:<br>
+Clasifica todos los exámenes usando una nota.<br>
+<ul>
+<li>Descarga el zip y abre detalles.csv<br></li>
+<li>Inserta una columna, lo mejor es junto a los apellidos del alumno, y dale un nombre.<br></li>
+<li>Ahora puedes añadir la segunda nota, teniendo en cuenta que los alumnos están ordenados de la misma forma que en el PDF.<br>
+Es decir, puedes ponerte en la primera página y será el primer alumno que aparece en el csv. Ponle la segunda nota en la nueva columna.<br></li>
+<li>Avanza página hasta el siguiente alumno, que será el siguiente alumno en el csv. Ponle la segunda nota.<br></li>
+<li>Y así sucesivamente.<br>
+<li>Cuando termines, guárdalo como csv, y ya puedes subir la nota a Padrino. Se puede subir las notas notas a la vez.<br></li>
+</ul>
+<br>
+
+
+ </body>
