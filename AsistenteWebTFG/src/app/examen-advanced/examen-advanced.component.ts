@@ -309,7 +309,10 @@ export class ExamenAdvancedComponent implements OnInit, AfterContentChecked {
           event.preventDefault();
           this.focusNextOnRow(event, this.selectedRow);
         }
-        else if (event.key == 'Enter') {
+        else if (event.key === 'Enter' ||
+    event.key.toUpperCase() === 'E' ||
+    event.code === 'Space' ||
+    event.key === ' ') {
           event.preventDefault();
           console.log("Enter on Row Global")
           this.lastSelectedRow = this.selectedElement;
