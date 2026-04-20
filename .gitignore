@@ -25,3 +25,9 @@ Thumbs.db
 
 #codex
 .codex
+
+*.rar
+*.pdf
+OriginalVersion/
+.venv/
+__pycache__/

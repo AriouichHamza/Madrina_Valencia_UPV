@@ -78,6 +78,7 @@ class Alumno:
         
 
 class Emitter:
+    # Stdout is used as a lightweight protocol to report progress/results to the parent process.
     def emit_progress(self, progress, state):
         sys.stdout.write(f"progress {progress} {state}\n")
         
@@ -87,40 +88,38 @@ class Emitter:
     def emit_student(self, alumno : Alumno):
         sys.stdout.write(f"new-calificado {alumno.to_json()}\n")
         
-
+    
     
 def normalize_DNI(dni):
+    # Remove leading zeros so OCR output can be compared against stored DNI values reliably.
     return dni.lstrip('0')
         
-sys.stdout.reconfigure(line_buffering=True) #Para no esperar al buffer y recibir respuestas en tiempo real
+# Flush each line immediately so the caller receives progress updates in real time.
+sys.stdout.reconfigure(line_buffering=True)
 initial_time = datetime.now()
 emitter = Emitter()
 current_folder = os.path.abspath(os.path.dirname(__file__))
 root_folder = os.path.dirname(current_folder)
 
-#Argumentos 
+# Runtime arguments received from the parent application.
 index = sys.argv[1]
 examen_nombre = sys.argv[2]
 alumnos = json.loads(sys.argv[3])
 
 
-#Split datos examen
-
+# The composite index encodes the user, subject, and exam identifiers.
 aux = index.split('-')
 usuario = aux[0]
 asignatura_ID = aux[1]
 examen_ID = aux[2]
 
-#transform into absolute path
-
+# Build the main input/output paths used during the OCR pipeline.
 examImgsPath = root_folder + "/user_data/" + index + "/"
 inputPDF = examImgsPath + examen_nombre + ".pdf"
 
 output_folder = current_folder + "/.img-dumps/"+ index + "/" # we use the current folder to stock the images
 trained_model_name = 'exammodel4.pt'
 trained_model_path = current_folder +"/"+  trained_model_name
-
-# Définition of CNN by a class
 
 class CNN(nn.Module): # inherite of the class Module
     def __init__(self):
@@ -154,6 +153,7 @@ class CNN(nn.Module): # inherite of the class Module
         # We don't appli softmax here because he is already include in the CrossEntropyLoss function use after.
         
     def forward(self, x):
+        # Each block extracts higher-level digit features before the final classifier layer.
         x = self.conv1(x)
         x = self.relu1(x)
         x = self.pool1(x)
@@ -176,16 +176,13 @@ class CNN(nn.Module): # inherite of the class Module
         
         return x
     
-
-
-#Crear la carpeta si no existe
+# Create the temporary dump folder used to store page crops and intermediate images.
 if not os.path.exists(output_folder):
     os.makedirs(output_folder)
     
 
-# Function to convert the pdf into images
-# Command to execute
 def convert_pdf_to_images(start_page, end_page, input_pdf, output_folder, total_pages):
+    # Render the header area of each page, which contains the DNI boxes.
     commande = [
         "pdftoppm",
         "-png",
@@ -204,6 +201,7 @@ def convert_pdf_to_images(start_page, end_page, input_pdf, output_folder, total_
     emitter.emit_progress(progress, "Convirtiendo PDF a imagenes")
     
 def convert_pdf_to_images_calification(start_page, end_page, input_pdf, output_folder):
+    # Render the area where the handwritten grade is expected to appear.
     commande = [
         "pdftoppm",
         "-png",
@@ -220,6 +218,7 @@ def convert_pdf_to_images_calification(start_page, end_page, input_pdf, output_f
     subprocess.run(commande)
 
 
+# Split the PDF conversion work across available CPU cores.
 total_pages = len(PdfReader(inputPDF).pages)
 numCores = os.cpu_count()
 pages_per_batch = total_pages // numCores
@@ -228,7 +227,7 @@ if(pages_per_batch == 0):
 
 emitter.emit_progress(0, "Convirtiendo PDF a imagenes")
 
-#Paralelizacion de la conversion de las paginas del PDF a imagenes
+# Convert full-page DNI regions and grade regions in parallel for faster preprocessing.
 with ProcessPoolExecutor() as executor:
     futures = []
     for start_page in range(1, total_pages + 1, pages_per_batch):
@@ -236,7 +235,7 @@ with ProcessPoolExecutor() as executor:
         futures.append(executor.submit(convert_pdf_to_images, start_page, end_page, inputPDF, output_folder, total_pages))
         futures.append(executor.submit(convert_pdf_to_images_calification, start_page, end_page, inputPDF, output_folder))
 
-        # Wait for all the futures to complete
+        # Wait for all the futures to complete.
     for future in futures:
         future.result()
 
@@ -244,10 +243,12 @@ with ProcessPoolExecutor() as executor:
 emitter.emit_progress(100, "Conversion de PDF a imagenes completada")
 
 
-global_CNN_model = CNN() #create another instance of the model to charge our trained model
-global_CNN_model.load_state_dict(torch.load(trained_model_path)) # charge the trained saved model
+# Load one shared model instance used to read the handwritten grade digits.
+global_CNN_model = CNN()
+global_CNN_model.load_state_dict(torch.load(trained_model_path))
 
 def remove_margin_all(img, margin = 0.05):
+    # Trim a small border to reduce noise from box outlines before classification.
     h, w = img.shape[:2]
     
     margin_h = int(h * margin)
@@ -257,20 +258,17 @@ def remove_margin_all(img, margin = 0.05):
     
     
 def is_square(contour, tolerance = 0.05):
+    # Grade digits are expected inside square boxes, so we reject small or non-square contours.
     x, y, w, h = cv.boundingRect(contour)
     ratio = w / h
-    #Ratio entre [1-tolerance, 1+tolerance] para comprobar que tenga las proporciones de un cuadrado
     if not ( 1- tolerance <= ratio <= 1 + tolerance):
         return False
-    #Comprobar si es lo suficientemente grande
     area = cv.contourArea(contour)
-    #print("AREA " + str(area))
     if area < 900:
         return False
-    #Aproximacion a poligono
     peri = cv.arcLength(contour, True)
     approx = cv.approxPolyDP(contour, 0.04 * peri, True)
-    return len(approx) == 4 #Si es un cuadrado, tendra 4 vertices
+    return len(approx) == 4
 
 
 transform = transforms.Compose([
@@ -283,12 +281,14 @@ transform_to_Tensor = transforms.Compose([
     transforms.ToTensor()
 ])
 def normalize_img(img):
+    # Keep the digit normalization steps consistent with the training pipeline.
     img = transform(img)
     img = img.unsqueeze(0)
     return img
 
     
 def detec_calification(numPage):
+    # Read the grade area, detect the filled boxes, and classify each handwritten digit.
     
     if numPage < 10:
         path_to_calification = output_folder + "calification-0" + str(numPage) + ".png"
@@ -296,7 +296,6 @@ def detec_calification(numPage):
         path_to_calification = output_folder + "calification-" + str(numPage) + ".png"
     
     img = Image.open(path_to_calification)
-    #deberia asumir que si hay calificacion pues hay nombre? Y si no hay nombre pero si calificacion por una mala prediccion?
     
     img_grey = cv.cvtColor(np.array(img), cv.COLOR_BGR2GRAY)
     #cv.imwrite(output_folder + "calification-grey-1-" + str(numPage) + ".png", img_grey)
@@ -304,7 +303,7 @@ def detec_calification(numPage):
     #cv.imwrite(output_folder + "calification-blur-1-" + str(numPage) + ".png", blur)
     img_edge = cv.Canny(blur, 30, 200, 1)
     #cv.imwrite(output_folder + "calification-edge-1-" + str(numPage) + ".png", img_edge)
-    #Para cerrar posibles huecos en los bordes
+    # Close small gaps so square borders are detected as complete contours.
     kernel = cv.getStructuringElement(cv.MORPH_RECT, (3, 3))
     closed = cv.morphologyEx(img_edge, cv.MORPH_CLOSE, kernel)
     
@@ -316,8 +315,9 @@ def detec_calification(numPage):
     square_contours = []
     for i, contour in enumerate(contours):
         if is_square(contour):
-            square_contours.append(contour) #Añadir a la lista de cuadrados
+            square_contours.append(contour)
             
+    # Sort left-to-right so the predicted digits keep the same order as the written grade.
     square_contours = sorted(square_contours, key = lambda contour: cv.boundingRect(contour)[0] ) 
     
     
@@ -343,7 +343,7 @@ def detec_calification(numPage):
         white_pixels = cv.countNonZero(binary_img)
         total_pixels = binary_img.size
     
-        #empty_threshold = 0.002  # Porcentaje de píxeles no blancos permitido
+        # Skip boxes that are completely blank.
         print("White pixels: " + str(white_pixels) + " Total pixels: " + str(total_pixels) + " = " + str(white_pixels/total_pixels)+ "  Page: " + str(numPage) + "  Contour: " + str(i))
         if white_pixels == total_pixels:
             print("Empty image")
@@ -363,6 +363,7 @@ def detec_calification(numPage):
 
     predictions_califications = []
     for i, crop_calification in enumerate(crop_califications_list):
+        # Quantize grayscale values to the same buckets used when preparing training samples.
         M = np.zeros((28,28), dtype=int)
         for x in range(28):
             for y in range(28):
@@ -378,8 +379,6 @@ def detec_calification(numPage):
                     z = 254
                 M[y,x] = z
                 
-        #tensor = transform_to_Tensor(M).unsqueeze(0)
-        #tensor = torch.Tensor(crop_calification).unsqueeze(0)
         tensor = torch.Tensor(M).unsqueeze(0).unsqueeze(0)
         
         output = global_CNN_model(tensor)
@@ -389,12 +388,13 @@ def detec_calification(numPage):
         
     
     
-    os.remove(path_to_calification)#removing all the unnecessary image from the computer memory
+    os.remove(path_to_calification)
     
     calification = ''.join([str(x) for x in predictions_califications])
     print(str(i) + " " + str(calification))
     
-    if(len(predictions_califications) == 0): #
+    # Rebuild a decimal grade according to how many boxes were detected.
+    if(len(predictions_califications) == 0):
         return ""
     if(len(predictions_califications) == 1):
         return str(predictions_califications[0])
@@ -409,13 +409,14 @@ def detec_calification(numPage):
             return float(0)
 
 def buscar_inicio_copias(pages, nbp):
+    # Detect which pages are the first page of a student's copy by locating the DNI template box.
     
     pagesConfirmed = []
     for page in pages:
-        #porcentaje sin coma flotante, solo enteros
+        # Emit integer progress updates while scanning the rendered page images.
         progress = int((page + 1) / nbp * 100) -1
         emitter.emit_progress(progress, "Buscando DNIs en páginas")
-        # Open the associate page at PNG format
+        # Open the rendered page image.
         if nbp>9 and page<10:
             pathToImg = output_folder + "page-0"+ str(page) + ".png"
         else :
@@ -424,14 +425,12 @@ def buscar_inicio_copias(pages, nbp):
         #print(pathToImg)
         img = Image.open(pathToImg)
 
-        #define the size of the area with the digits
         (largeur_image, hauteur_image) = img.size
 
-        # Transform RGB format to gray scale
+        # Convert the page to grayscale pixel-by-pixel before inverting it for template detection.
         for y in range(hauteur_image):
             for x in range(largeur_image):
                 r,v,b=img.getpixel((x,y)) 
-                #0.299(red) + 0.587(green) + 0.114(blue) are values to obtain a greyscale 
                 n_r=r*0.299
                 n_v=v*0.587
                 n_b=b*0.114
@@ -441,14 +440,14 @@ def buscar_inicio_copias(pages, nbp):
         img.save(aux_img)        
         image = cv.imread(aux_img)
 
-        #transforming the image in a greyscale image with dark background
+        # Invert the page so the form lines become bright and easier to detect.
         whiteonblackdata=cv.bitwise_not(image) 
         cv.imwrite(aux_img,whiteonblackdata) 
 
         imgf = Image.open(aux_img).convert('L') # to obtain only 1 grey channel    
 
 
-        # DETECT IF IT IS AN ID PAGE OR NOT
+        # Detect whether the expected DNI frame exists on this page.
 
         k=0
         max_h_1=0
@@ -458,7 +457,7 @@ def buscar_inicio_copias(pages, nbp):
 
 
         x=280
-        for y in range(300,200,-1):  # To detect y-coordinate of the horizontal line upper
+        for y in range(300,200,-1):  # Scan upward to find the top horizontal border.
             z=imgf.getpixel((x,y))
             if z>150:
                 for xb in range(x,x+50): 
@@ -469,7 +468,7 @@ def buscar_inicio_copias(pages, nbp):
                         else:
                             k=k
         k=0
-        for y in range(310,400):  # To detect y-coordinate of the horizontal line bottom
+        for y in range(310,400):  # Scan downward to find the bottom horizontal border.
             z=imgf.getpixel((x,y))
             if z>150:
                 for xb in range(x,x+50):
@@ -483,7 +482,7 @@ def buscar_inicio_copias(pages, nbp):
 
         k=0  
         y=min_h_1+10
-        for x in range(300,210,-1): # To detect x-coordinate of the vertical line right
+        for x in range(300,210,-1): # Scan leftward to find the right vertical border.
             z=imgf.getpixel((x,y))
             if z>150:
                 for yb in range(y,y+40): 
@@ -494,7 +493,7 @@ def buscar_inicio_copias(pages, nbp):
                         else:
                             k=k
         k=0
-        for x in range(430,370,-1): # To detect x-coordinate of the vertical line left
+        for x in range(430,370,-1): # Scan leftward to find the left vertical border.
             z=imgf.getpixel((x,y))
             if z>150:
                 for yb in range(y,y+40):
@@ -506,18 +505,17 @@ def buscar_inicio_copias(pages, nbp):
                             k=k
         #print("min_l_1=",min_l_1," max_l_1=",max_l_1)
 
-        if min_l_1!=0: # If the coordinates are detected, we save the image
+        if min_l_1!=0:
             
-            os.remove(pathToImg) #removing all the unnecessary image from the computer memory
+            # Keep only pages confirmed as first pages; temporary renders can be discarded.
+            os.remove(pathToImg)
             
             newPath = output_folder + "DNIpage-"+ str(page) +".png" 
             imgf.save(newPath)
             newPage = [(min_l_1, min_h_1, max_l_1, max_h_1), page ]
             pagesConfirmed.append(newPage)
-            #coordsDNI.append([min_l_1, min_h_1, max_l_1, max_h_1, page ])
-            #ListNumFirstPage.append(page)
-        # If the coordinates are not detected, we remove the image
         else:
+            # Non-matching pages will never be used again, so remove their grade crop as well.
             pathToCalificacion = ""
             if(page < 10):
                 pathToCalificacion = output_folder + "calification-0" + str(page) + ".png"
@@ -526,13 +524,13 @@ def buscar_inicio_copias(pages, nbp):
             os.remove(pathToCalificacion)
         
         os.remove(aux_img)
-        #os.remove(pathToImg) #removing all the unnecessary image from the computer memory 
     return pagesConfirmed
 
 
     
     
 def split_in_num_cpu(nbp):
+    # Distribute page numbers across CPU buckets to parallelize first-page detection.
     cores = os.cpu_count()
     result = [[] for _ in range(cores)]
     for i in range(1, nbp + 1):
@@ -540,6 +538,12 @@ def split_in_num_cpu(nbp):
     return result
 
 def main():
+    # Main pipeline:
+    # 1. locate the first page of each student's copy,
+    # 2. crop the 9 DNI digits,
+    # 3. classify them with the CNN,
+    # 4. match the OCR result against the known student list,
+    # 5. read the handwritten grade and emit the result.
     
     numErrorsGlobal = 0
     Output = []
@@ -550,9 +554,10 @@ def main():
     ListNumFirstPage = [] # Create a list to stock the number of the first page of the student
     
 
-    # Add the titles line of the csv file
+    # Preserve the original CSV-like structure even if the current flow emits JSON events.
     Output.append(['DNI', 'Name', 'Surname', 'First page', 'Last page'])
     
+    # Keep a lightweight local roster for fuzzy DNI matching after OCR.
     for alumno in alumnos:
         L.append([alumno["dni"], alumno["nombre"], alumno["apellidos"]])
     
@@ -561,7 +566,7 @@ def main():
     
     pdfFileObj = open(inputPDF, 'rb')
     pdfReader = PyPDF2.PdfReader(pdfFileObj)
-    nbp = len(pdfReader.pages) #Se puede sacar tambien del numero de archivos .jpg que haya en la carpeta de imagenes
+    nbp = len(pdfReader.pages)
 
     
     pagesLists = split_in_num_cpu(nbp)
@@ -579,6 +584,7 @@ def main():
                     coordsDNI.append(result[0])
                     ListNumFirstPage.append(result[1])
         
+    # Once the first pages are known, each interval between two starts belongs to one student.
     nbStudent = len(ListNumFirstPage)
     
     ListNumFirstPage = sorted(ListNumFirstPage)
@@ -587,7 +593,8 @@ def main():
         try :
             exception_occurred = False
             
-            coords = np.zeros((9, 1, 4), dtype=int) #Create a matrix to stock coordinates of the boxes
+            # Store the crop rectangle for each of the 9 DNI digit boxes.
+            coords = np.zeros((9, 1, 4), dtype=int)
             k=0
             max_h=0
             min_h=0
@@ -597,8 +604,7 @@ def main():
             pathToDniPage =output_folder + "DNIpage-"+str(ListNumFirstPage[j-1])+".png"
             
             imgf = Image.open(pathToDniPage).convert('L')
-            #actually testing to know the exact coordinates of where to crop the digits
-            # For the first digit box    
+            # Detect the first digit box using the anchor box found on the template.
             x= coordsDNI[j-1][2]+10    
             for y in range(290,210,-1):
                 z=imgf.getpixel((x,y))
@@ -646,9 +652,6 @@ def main():
                             else:
                                 k=k
         
-            #print("case1 : min_l=",min_l," max_l=",max_l)
- 
-
             if min_l != 0:
                 coords[0][0][0]= min_l
             else :
@@ -667,7 +670,7 @@ def main():
                 coords[0][0][3]= coordsDNI[j-1][3] #=max_h_1
         
             
-    # For the second digit box to the ninth one
+            # Infer the remaining 8 boxes by walking right from the previous box.
             for d in range(1, len(coords)) :
 
                 x= coords[d-1][0][0]+10
@@ -693,8 +696,6 @@ def main():
                                 else:
                                     k=k
 
-                #print("case", d+1, ": min_h=",min_h," max_h=",max_h)
-
                 k=0  
                 y=min_h+10
                 for x in range(coords[d-1][0][2]+10,coords[d-1][0][2]-10,-1):
@@ -719,8 +720,6 @@ def main():
                                 else:
                                     k=k
         
-                #print("case", d+1, ":min_l=",min_l," max_l=",max_l)
-        
                 if min_l != 0 :
                     coords[d][0][0]= min_l
                 else :
@@ -744,35 +743,29 @@ def main():
 
             for l in range(len(coords)):
                 
-                # Create Box
+                # Shrink the crop slightly to avoid capturing the box borders.
                 box = (coords[l][0][0]+5, coords[l][0][1]+5, coords[l][0][2]-5, coords[l][0][3]-5)
-                #print(box)
                 
-                # Crop Image
                 try :
-                    area = imgf.crop(box) #actually cutting the digits
+                    area = imgf.crop(box)
                 except :
                     area = Image.new('L', (28, 28), 0)
                     exception_occurred = True
-                #visualizar imagen
-                #area.show()
-                area.save(output_folder + "croping"+str(j)+"-"+str(l)+".png", "PNG") # Save Image
+                area.save(output_folder + "croping"+str(j)+"-"+str(l)+".png", "PNG")
                 
-                # Resize image into EMNIST size
+                # Resize every crop to the 28x28 format expected by the CNN.
                 image = cv.imread(output_folder + "croping"+str(j)+"-"+str(l)+".png", 1) 
                 imResized = cv.resize(image, (28, 28)) 
                 cv.imwrite(output_folder + "croping"+str(j)+"-"+str(l)+".png",imResized)
                 imResized = Image.open(output_folder + "croping"+str(j)+"-"+str(l)+".png").convert('L')
                 
-                #Fill the list of crop digits
+                # Keep the filenames so they can be loaded into the tensor batch below.
                 digits_images.append(output_folder + "croping"+str(j)+"-"+str(l)+".png")
             
-            # Creating the matrix 9x28x28
+            # Assemble the 9 normalized digit images into one tensor-friendly matrix.
             M = np.zeros((9,28,28), dtype=int)
             
-            #fig, ax = plt.subplots(nrows=1, ncols=9, figsize=(10, 2))
-            #For each digit 
-            for c in range(9):   #arranging the value of pixel for each digit of the current student
+            for c in range(9):
                 imDigits = Image.open(digits_images[c])
                 for x in range(28):
                     for y in range(28):
@@ -787,14 +780,9 @@ def main():
                         else:
                             z=254
                         M[c,y,x] = z
-                #ax[c].imshow(M[c], cmap='gray')
-            #plt.tight_layout()
-            #plt.show()   #showing
-        
-        
-            #print(M.shape)
-            model = CNN() #create another instance of the model to charge our trained model
-            model.load_state_dict(torch.load(trained_model_path)) # charge the trained saved model
+            # Load a fresh model inside the worker flow used for DNI recognition.
+            model = CNN()
+            model.load_state_dict(torch.load(trained_model_path))
             
             
             M_tensorsList = []
@@ -805,18 +793,14 @@ def main():
                 tensor = torch.Tensor(m).unsqueeze(0)
                 M_tensorsList.append(tensor)
             M_tensors = torch.stack(M_tensorsList)  
-            #print(M_tensors.shape)
             outputs = model(M_tensors)
             predictions2.append(torch.argmax(outputs, dim=1))
             
             predictions2 = torch.stack(predictions2).numpy()
-            # predictions2 is then a list containing one list, to get a simple list, we select the first list in the list
+            # The model output is wrapped once, so flatten it back to a simple 9-digit vector.
             predictions2 = predictions2[0]
             
-            #print(predictions2[0:9])  #display the predictions for the student
-        
-            
-            # Remove from the memroy images now useless
+            # Delete temporary crops as soon as the prediction batch is complete.
             os.remove(pathToDniPage)
             for digit in range(len(coords)):
                 os.remove(output_folder + "croping"+str(j)+"-"+str(digit)+".png")
@@ -826,6 +810,7 @@ def main():
             prediction_str = ''.join([str(x) for x in predictions2])
             
             prediction_str = normalize_DNI(prediction_str)
+            # Match the OCR output against the known roster using edit distance.
             for DNI_index in range(len(L)):
                 DNI_str = normalize_DNI(L[DNI_index][0])
                 
@@ -836,7 +821,7 @@ def main():
                     max_ratio = ratio
                     best_match = DNI_index
 
-            # Save the output information in the Output list
+            # Build the final page interval assigned to the matched student.
             Line = copy.deepcopy(L[best_match])
             Line.append(str(ListNumFirstPage[j-1]))
             if j < nbStudent :
@@ -853,32 +838,27 @@ def main():
                     LineBis.append(str(nbp))
                 Output.append(LineBis)
             else :
-                #Paso final, buscamos calificiacion
+                # Final step: detect and sanitize the grade before emitting the result.
                 calificacion = detec_calification(ListNumFirstPage[j-1])
                 if calificacion == "":
                     calificacion = 0.0
                 else: 
                     calificacion = float(calificacion)
-                    #Debe estar entra 0 y 10
+                    # Grades outside the expected range are treated as invalid OCR noise.
                     if calificacion < 0 or calificacion > 10:
                         calificacion = 0.0
  
-                #Output.append(Line)
                 print(Line )
                 emitter.emit_student(Alumno(asignatura_ID, examen_ID, Line[0], Line[1], Line[2], Line[3], Line[4], calificacion))
-            #print("Line = ", Line, "Output = ", Output)
-            #print("Vmax =",Vmax)
         except Exception as ex:
-            #Imprimir excepcion
             print(ex)
             numErrorsGlobal += 1
-            #Emitimos la informacion que tengamos
+            # Even on failure, try to salvage the grade and emit a placeholder student entry.
             calificacion = detec_calification(ListNumFirstPage[j-1])
             if calificacion == "":
                 calificacion = 0.0
             else: 
                 calificacion = float(calificacion)
-                #Debe estar entra 0 y 10
                 if calificacion < 0 or calificacion > 10:
                     calificacion = 0.0
             print("Error in student ", j)
@@ -892,6 +872,5 @@ def main():
 
 main()
 emitter.emit_done(datetime.now() - initial_time) 
-#Borramos todos los ficheros auxiliares creados
+# Remove the temporary working directory created for intermediate images.
 shutil.rmtree(output_folder)
-
