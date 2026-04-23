@@ -25,7 +25,10 @@ Thumbs.db
 
 #codex
 .codex
-
+*.png
+*.jpg
+*.jpeg
+*.png
 *.rar
 *.pdf
 OriginalVersion/

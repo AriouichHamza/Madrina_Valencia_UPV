@@ -62,6 +62,7 @@ import Levenshtein
 import threading
 #import cProfile
 import shutil
+import logging
 
 class Alumno:
     def __init__(self, asignatura, examen, dni, nombre, apellidos, ini, fin , nota):
@@ -120,6 +121,51 @@ inputPDF = examImgsPath + examen_nombre + ".pdf"
 output_folder = current_folder + "/.img-dumps/"+ index + "/" # we use the current folder to stock the images
 trained_model_name = 'exammodel4.pt'
 trained_model_path = current_folder +"/"+  trained_model_name
+
+PAGE_NUM_WIDTH = 1
+
+def set_page_num_width(total_pages):
+    global PAGE_NUM_WIDTH
+    PAGE_NUM_WIDTH = max(1, len(str(total_pages)))
+
+def format_page_number(page_number, width=None):
+    if width is None:
+        width = PAGE_NUM_WIDTH
+    return f"{int(page_number):0{width}d}"
+
+def build_dump_path(prefix, page_number, extension="png"):
+    return os.path.join(output_folder, f"{prefix}-{format_page_number(page_number)}.{extension}")
+
+def safe_crop_digit(image, box):
+    width, height = image.size
+    original_box = tuple(int(v) for v in box)
+    left, top, right, bottom = original_box
+
+    if right <= left or bottom <= top:
+        return Image.new(image.mode, (28, 28), 0), True
+
+    crop_width = right - left
+    crop_height = bottom - top
+    clamped_box = (
+        max(0, min(left, width)),
+        max(0, min(top, height)),
+        max(0, min(right, width)),
+        max(0, min(bottom, height)),
+    )
+
+    if clamped_box[2] <= clamped_box[0] or clamped_box[3] <= clamped_box[1]:
+        return Image.new(image.mode, (28, 28), 0), True
+
+    try:
+        if clamped_box == original_box:
+            return image.crop(clamped_box), False
+
+        area = Image.new(image.mode, (crop_width, crop_height), 0)
+        cropped = image.crop(clamped_box)
+        area.paste(cropped, (clamped_box[0] - left, clamped_box[1] - top))
+        return area, True
+    except Exception:
+        return Image.new(image.mode, (28, 28), 0), True
 
 class CNN(nn.Module): # inherite of the class Module
     def __init__(self):
@@ -220,6 +266,7 @@ def convert_pdf_to_images_calification(start_page, end_page, input_pdf, output_f
 
 # Split the PDF conversion work across available CPU cores.
 total_pages = len(PdfReader(inputPDF).pages)
+set_page_num_width(total_pages)
 numCores = os.cpu_count()
 pages_per_batch = total_pages // numCores
 if(pages_per_batch == 0):
@@ -290,10 +337,7 @@ def normalize_img(img):
 def detec_calification(numPage):
     # Read the grade area, detect the filled boxes, and classify each handwritten digit.
     
-    if numPage < 10:
-        path_to_calification = output_folder + "calification-0" + str(numPage) + ".png"
-    else:
-        path_to_calification = output_folder + "calification-" + str(numPage) + ".png"
+    path_to_calification = build_dump_path("calification", numPage)
     
     img = Image.open(path_to_calification)
     
@@ -325,7 +369,7 @@ def detec_calification(numPage):
         x, y, w, h = cv.boundingRect(contour)
         
         #print(str(numPage) + " and contour " + str(i) + " is square")
-        pathToClean = output_folder + "clean1-" + str(numPage) + "-" + str(i) + ".png"
+        pathToClean = build_dump_path("clean1", numPage) + f"-{i}.png"
         
         img_aux = img.crop((x, y, x + w, y + h))
         
@@ -353,9 +397,9 @@ def detec_calification(numPage):
         
         img_auxCV = cv.bitwise_not(img_auxCV)
         
-        cv.imwrite(output_folder + "final-cut" + str(numPage) +"-"  + str(i) + ".png", img_auxCV)
+        cv.imwrite(build_dump_path("final-cut", numPage) + f"-{i}.png", img_auxCV)
         #os.remove(pathToClean)
-        imgf = Image.open(output_folder + "final-cut" + str(numPage) +"-"  + str(i) + ".png").convert('L')
+        imgf = Image.open(build_dump_path("final-cut", numPage) + f"-{i}.png").convert('L')
         
         crop_califications_list.append(imgf)
         continue
@@ -417,10 +461,7 @@ def buscar_inicio_copias(pages, nbp):
         progress = int((page + 1) / nbp * 100) -1
         emitter.emit_progress(progress, "Buscando DNIs en páginas")
         # Open the rendered page image.
-        if nbp>9 and page<10:
-            pathToImg = output_folder + "page-0"+ str(page) + ".png"
-        else :
-            pathToImg = output_folder + "page-"+str(page) + ".png"
+        pathToImg = build_dump_path("page", page)
 
         #print(pathToImg)
         img = Image.open(pathToImg)
@@ -436,7 +477,7 @@ def buscar_inicio_copias(pages, nbp):
                 n_b=b*0.114
                 gray=int(n_b+n_v+n_r)
                 img.putpixel((x,y),(gray,gray,gray))
-        aux_img = output_folder + examen_nombre +"-" + str(page) + "-aux.png"
+        aux_img = build_dump_path("aux", page)
         img.save(aux_img)        
         image = cv.imread(aux_img)
 
@@ -510,17 +551,13 @@ def buscar_inicio_copias(pages, nbp):
             # Keep only pages confirmed as first pages; temporary renders can be discarded.
             os.remove(pathToImg)
             
-            newPath = output_folder + "DNIpage-"+ str(page) +".png" 
+            newPath = build_dump_path("DNIpage", page)
             imgf.save(newPath)
             newPage = [(min_l_1, min_h_1, max_l_1, max_h_1), page ]
             pagesConfirmed.append(newPage)
         else:
             # Non-matching pages will never be used again, so remove their grade crop as well.
-            pathToCalificacion = ""
-            if(page < 10):
-                pathToCalificacion = output_folder + "calification-0" + str(page) + ".png"
-            else:
-                pathToCalificacion = output_folder + "calification-" + str(page) + ".png"
+            pathToCalificacion = build_dump_path("calification", page)
             os.remove(pathToCalificacion)
         
         os.remove(aux_img)
@@ -550,8 +587,7 @@ def main():
     L=[]
     
     nbStudent = 1  # Increase a variable number of students
-    coordsDNI = [] # Create a list to stock the coordinates of the DNI
-    ListNumFirstPage = [] # Create a list to stock the number of the first page of the student
+    confirmed_pages = []
     
 
     # Preserve the original CSV-like structure even if the current flow emits JSON events.
@@ -567,6 +603,9 @@ def main():
     pdfFileObj = open(inputPDF, 'rb')
     pdfReader = PyPDF2.PdfReader(pdfFileObj)
     nbp = len(pdfReader.pages)
+    set_page_num_width(nbp)
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.info("Número de páginas: %s", nbp)
 
     
     pagesLists = split_in_num_cpu(nbp)
@@ -581,13 +620,13 @@ def main():
             results = future.result()
             if results != None:
                 for result in results:
-                    coordsDNI.append(result[0])
-                    ListNumFirstPage.append(result[1])
+                    confirmed_pages.append((result[1], result[0]))
         
     # Once the first pages are known, each interval between two starts belongs to one student.
+    confirmed_pages = sorted(confirmed_pages, key=lambda item: item[0])
+    ListNumFirstPage = [page for page, coords in confirmed_pages]
+    coordsDNI = [coords for page, coords in confirmed_pages]
     nbStudent = len(ListNumFirstPage)
-    
-    ListNumFirstPage = sorted(ListNumFirstPage)
     
     for j in range(1, nbStudent+1):
         try :
@@ -601,7 +640,7 @@ def main():
             max_l=0
             min_l=0
             
-            pathToDniPage =output_folder + "DNIpage-"+str(ListNumFirstPage[j-1])+".png"
+            pathToDniPage = build_dump_path("DNIpage", ListNumFirstPage[j-1])
             
             imgf = Image.open(pathToDniPage).convert('L')
             # Detect the first digit box using the anchor box found on the template.
@@ -746,10 +785,8 @@ def main():
                 # Shrink the crop slightly to avoid capturing the box borders.
                 box = (coords[l][0][0]+5, coords[l][0][1]+5, coords[l][0][2]-5, coords[l][0][3]-5)
                 
-                try :
-                    area = imgf.crop(box)
-                except :
-                    area = Image.new('L', (28, 28), 0)
+                area, crop_adjusted = safe_crop_digit(imgf, box)
+                if crop_adjusted:
                     exception_occurred = True
                 area.save(output_folder + "croping"+str(j)+"-"+str(l)+".png", "PNG")
                 
