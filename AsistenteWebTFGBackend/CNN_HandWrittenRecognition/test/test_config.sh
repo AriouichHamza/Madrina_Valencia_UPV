@@ -12,7 +12,7 @@ MODEL_PATH="/home/ariouich/Bureau/valencia/Madrina/AsistenteWebTFGBackend/CNN_Ha
 REF_PATH="/home/ariouich/Bureau/valencia/Madrina/AsistenteWebTFGBackend/CNN_HandWrittenRecognition/test/students.json"
 
 # Output directory for results
-OUTPUT_DIR="./debug_test1_new"
+OUTPUT_DIR="./debug_test1_new_boxes_detection"
 
 # Mode: "ground_truth" (default) or "--students" (for JSON students file)
 MODE="--students"

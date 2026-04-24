@@ -71,6 +71,7 @@ trained_model_name = 'exammodel4.pt'
 trained_model_path = "/home/ariouich/Bureau/valencia/Madrina/AsistenteWebTFGBackend/CNN_HandWrittenRecognition/" + trained_model_name
 global_CNN_model = None
 PAGE_NUM_WIDTH = 1
+DNI_CHAIN_CACHE = {}
 
 
 def set_page_num_width(total_pages):
@@ -450,121 +451,454 @@ def detec_calification(numPage):
         else:
             return float(0)
 
+# ----------------------------
+# utilitaires
+# ----------------------------
+def rect_xyxy_to_xywh(rect):
+    x0, y0, x1, y1 = rect
+    return (int(x0), int(y0), int(x1 - x0), int(y1 - y0))
 
+def rect_xywh_to_xyxy(rect):
+    x, y, w, h = rect
+    return (int(x), int(y), int(x + w), int(y + h))
+
+def rect_center(rect):
+    x, y, w, h = rect
+    return (x + w / 2.0, y + h / 2.0)
+
+def rect_area(rect):
+    x, y, w, h = rect
+    return max(0, w) * max(0, h)
+
+def rect_iou(a, b):
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+
+    ax2, ay2 = ax + aw, ay + ah
+    bx2, by2 = bx + bw, by + bh
+
+    ix1 = max(ax, bx)
+    iy1 = max(ay, by)
+    ix2 = min(ax2, bx2)
+    iy2 = min(ay2, by2)
+
+    iw = max(0, ix2 - ix1)
+    ih = max(0, iy2 - iy1)
+    inter = iw * ih
+    union = rect_area(a) + rect_area(b) - inter
+    if union <= 0:
+        return 0.0
+    return inter / union
+
+def order_points_clockwise(pts):
+    pts = np.array(pts, dtype=np.float32).reshape(-1, 2)
+    s = pts.sum(axis=1)
+    d = np.diff(pts, axis=1).reshape(-1)
+
+    top_left = pts[np.argmin(s)]
+    bottom_right = pts[np.argmax(s)]
+    top_right = pts[np.argmin(d)]
+    bottom_left = pts[np.argmax(d)]
+
+    return np.array([top_left, top_right, bottom_right, bottom_left], dtype=np.float32)
+
+def rotate_image_keep_bounds(image, angle_deg):
+    h, w = image.shape[:2]
+    center = (w / 2.0, h / 2.0)
+    M = cv.getRotationMatrix2D(center, angle_deg, 1.0)
+
+    cos = abs(M[0, 0])
+    sin = abs(M[0, 1])
+
+    new_w = int((h * sin) + (w * cos))
+    new_h = int((h * cos) + (w * sin))
+
+    M[0, 2] += (new_w / 2) - center[0]
+    M[1, 2] += (new_h / 2) - center[1]
+
+    return cv.warpAffine(image, M, (new_w, new_h), flags=cv.INTER_LINEAR, borderValue=0)
+
+def light_deskew(gray_inv):
+    """
+    Petit redressement léger.
+    On reste volontairement simple pour ne pas casser ta logique.
+    """
+    bw = cv.threshold(gray_inv, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU)[1]
+    coords = np.column_stack(np.where(bw > 0))
+
+    if len(coords) < 100:
+        return gray_inv
+
+    rect = cv.minAreaRect(coords[:, ::-1].astype(np.float32))
+    angle = rect[-1]
+
+    if angle < -45:
+        angle = 90 + angle
+
+    if abs(angle) < 0.2 or abs(angle) > 12:
+        return gray_inv
+
+    return rotate_image_keep_bounds(gray_inv, angle)
+
+def preprocess_dni_page_from_path(path_to_img):
+    """
+    Retourne :
+    - gray_inv : image grayscale inversée, compatible avec la logique OCR actuelle
+    - bw       : image binaire pour la détection des boxes
+    """
+    img = cv.imread(path_to_img, cv.IMREAD_COLOR)
+    if img is None:
+        return None, None
+
+    gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+
+    # Même esprit que ton code actuel : inversion pour avoir traits / texte en blanc
+    gray_inv = cv.bitwise_not(gray)
+
+    # léger deskew
+    gray_inv = light_deskew(gray_inv)
+
+    # binarisation robuste
+    blur = cv.GaussianBlur(gray_inv, (3, 3), 0)
+    bw = cv.adaptiveThreshold(
+        blur,
+        255,
+        cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv.THRESH_BINARY,
+        31,
+        -5
+    )
+
+    # fermeture morphologique pour reconnecter les bords des cases
+    kernel = cv.getStructuringElement(cv.MORPH_RECT, (3, 3))
+    bw = cv.morphologyEx(bw, cv.MORPH_CLOSE, kernel, iterations=1)
+
+    return gray_inv, bw
+
+def box_metrics(binary_img, rect):
+    """
+    Mesures pour accepter / rejeter une case :
+    - border_fill_ratio : bords bien présents
+    - inner_fill_ratio  : contenu interne non vide
+    - corner_fill_ratio : les 4 coins existent bien
+    """
+    x, y, w, h = rect
+    H, W = binary_img.shape[:2]
+
+    x = max(0, min(x, W - 1))
+    y = max(0, min(y, H - 1))
+    w = max(1, min(w, W - x))
+    h = max(1, min(h, H - y))
+
+    roi = binary_img[y:y+h, x:x+w]
+    if roi.size == 0:
+        return {
+            "border_fill_ratio": 0.0,
+            "inner_fill_ratio": 0.0,
+            "corner_fill_ratio": 0.0
+        }
+
+    t = max(2, int(min(w, h) * 0.12))
+
+    border_mask = np.ones_like(roi, dtype=np.uint8)
+    if h > 2 * t and w > 2 * t:
+        border_mask[t:h-t, t:w-t] = 0
+
+    inner_mask = 1 - border_mask
+
+    border_pixels = roi[border_mask == 1]
+    inner_pixels = roi[inner_mask == 1]
+
+    border_fill_ratio = float(np.mean(border_pixels > 0)) if border_pixels.size else 0.0
+    inner_fill_ratio = float(np.mean(inner_pixels > 0)) if inner_pixels.size else 0.0
+
+    p = max(2, int(min(w, h) * 0.16))
+    corners = [
+        roi[0:p, 0:p],
+        roi[0:p, max(0, w-p):w],
+        roi[max(0, h-p):h, 0:p],
+        roi[max(0, h-p):h, max(0, w-p):w],
+    ]
+    corner_fill_ratio = float(np.mean([np.mean(c > 0) for c in corners if c.size > 0])) if corners else 0.0
+
+    return {
+        "border_fill_ratio": border_fill_ratio,
+        "inner_fill_ratio": inner_fill_ratio,
+        "corner_fill_ratio": corner_fill_ratio,
+    }
+
+def detect_box_candidates(binary_img):
+    """
+    Détecte des cases candidates :
+    - contour fermé
+    - approxPolyDP avec 4 coins
+    - dimensions cohérentes
+    - bord et coins suffisamment remplis
+    """
+    contours, _ = cv.findContours(binary_img, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
+    H, W = binary_img.shape[:2]
+
+    candidates = []
+    img_area = H * W
+
+    for cnt in contours:
+        area = cv.contourArea(cnt)
+        if area < 1200 or area > img_area * 0.08:
+            continue
+
+        peri = cv.arcLength(cnt, True)
+        approx = cv.approxPolyDP(cnt, 0.03 * peri, True)
+
+        if len(approx) != 4:
+            continue
+
+        pts = order_points_clockwise(approx.reshape(-1, 2))
+        x, y, w, h = cv.boundingRect(pts.astype(np.int32))
+
+        if w < 25 or h < 25:
+            continue
+
+        ratio = w / float(h)
+        if ratio < 0.45 or ratio > 2.20:
+            continue
+
+        metrics = box_metrics(binary_img, (x, y, w, h))
+
+        # Coins présents + bords visibles + minimum de contenu interne
+        if metrics["corner_fill_ratio"] < 0.05:
+            continue
+        if metrics["border_fill_ratio"] < 0.12:
+            continue
+        if metrics["inner_fill_ratio"] < 0.005:
+            continue
+
+        score = (
+            2.2 * metrics["corner_fill_ratio"] +
+            2.8 * metrics["border_fill_ratio"] +
+            1.0 * metrics["inner_fill_ratio"]
+        )
+
+        candidates.append({
+            "rect": (x, y, w, h),
+            "metrics": metrics,
+            "score": score,
+        })
+
+    # déduplication des rectangles qui se recouvrent trop
+    candidates = sorted(candidates, key=lambda d: d["score"], reverse=True)
+    filtered = []
+    for cand in candidates:
+        keep = True
+        for kept in filtered:
+            if rect_iou(cand["rect"], kept["rect"]) > 0.65:
+                keep = False
+                break
+        if keep:
+            filtered.append(cand)
+
+    # tri gauche -> droite
+    filtered = sorted(filtered, key=lambda d: (d["rect"][1], d["rect"][0]))
+    return filtered
+
+def compatible_next_box(prev_rect, next_rect):
+    """
+    Contraintes entre deux cases successives.
+    """
+    px, py, pw, ph = prev_rect
+    nx, ny, nw, nh = next_rect
+
+    pcx, pcy = rect_center(prev_rect)
+    ncx, ncy = rect_center(next_rect)
+
+    gap = nx - (px + pw)   # distance horizontale entre les deux cases
+
+    # même ligne
+    if abs(ncy - pcy) > 0.35 * max(ph, nh):
+        return False, None
+
+    # tailles proches
+    if not (0.65 <= nw / float(pw) <= 1.45):
+        return False, None
+    if not (0.65 <= nh / float(ph) <= 1.45):
+        return False, None
+
+    # position "à côté"
+    if gap < -0.20 * pw:
+        return False, None
+    if gap > 1.00 * pw:
+        return False, None
+
+    # score de voisinage : plus petit = meilleur
+    y_pen = abs(ncy - pcy) / max(ph, nh)
+    w_pen = abs(nw - pw) / max(pw, 1)
+    h_pen = abs(nh - ph) / max(ph, 1)
+    gap_target = 0.05 * pw
+    gap_pen = abs(gap - gap_target) / max(pw, 1)
+
+    chain_cost = y_pen + w_pen + h_pen + gap_pen
+    return True, chain_cost
+
+def build_chain_from_seed(candidates, seed_idx, target_len=10):
+    """
+    Construit une chaîne horizontale de boxes :
+    ancre + 9 boxes du DNI.
+    """
+    used = {seed_idx}
+    chain = [candidates[seed_idx]]
+
+    while len(chain) < target_len:
+        prev = chain[-1]
+        prev_rect = prev["rect"]
+
+        best = None
+        best_cost = 1e9
+        best_idx = None
+
+        for idx, cand in enumerate(candidates):
+            if idx in used:
+                continue
+
+            ok, cost = compatible_next_box(prev_rect, cand["rect"])
+            if not ok:
+                continue
+
+            # bonus si la box ressemble bien à une vraie case
+            cost = cost - 0.25 * cand["score"]
+
+            if cost < best_cost:
+                best_cost = cost
+                best = cand
+                best_idx = idx
+
+        if best is None:
+            break
+
+        chain.append(best)
+        used.add(best_idx)
+
+    return chain
+
+def chain_global_score(chain):
+    if not chain:
+        return -1e9
+
+    rects = [c["rect"] for c in chain]
+    widths = np.array([r[2] for r in rects], dtype=np.float32)
+    heights = np.array([r[3] for r in rects], dtype=np.float32)
+    centers_y = np.array([rect_center(r)[1] for r in rects], dtype=np.float32)
+
+    scores = np.array([c["score"] for c in chain], dtype=np.float32)
+
+    consistency_penalty = (
+        np.std(widths) / (np.mean(widths) + 1e-6) +
+        np.std(heights) / (np.mean(heights) + 1e-6) +
+        np.std(centers_y) / (np.mean(heights) + 1e-6)
+    )
+
+    return len(chain) * 10.0 + float(np.mean(scores)) - 5.0 * consistency_penalty
+
+def detect_dni_chain_on_page(page_number):
+    """
+    Détecte :
+    - la boxe ancre
+    - les 9 boxes du DNI à sa droite
+    """
+    global DNI_CHAIN_CACHE
+
+    if page_number in DNI_CHAIN_CACHE:
+        return DNI_CHAIN_CACHE[page_number]
+
+    path_to_img = build_dump_path("page", page_number)
+    gray_inv, bw = preprocess_dni_page_from_path(path_to_img)
+
+    if gray_inv is None or bw is None:
+        DNI_CHAIN_CACHE[page_number] = None
+        return None
+
+    candidates = detect_box_candidates(bw)
+    if len(candidates) < 9:
+        DNI_CHAIN_CACHE[page_number] = None
+        return None
+
+    best_chain = None
+    best_score = -1e9
+
+    # on cherche idéalement 10 boxes : 1 ancre + 9 boxes de DNI
+    for seed_idx in range(len(candidates)):
+        chain = build_chain_from_seed(candidates, seed_idx, target_len=10)
+        score = chain_global_score(chain)
+
+        if score > best_score:
+            best_score = score
+            best_chain = chain
+
+    if best_chain is None:
+        DNI_CHAIN_CACHE[page_number] = None
+        return None
+
+    # cas 1 : on a bien 10 boxes -> ancre + 9 cases
+    if len(best_chain) >= 10:
+        best_chain = best_chain[:10]
+        anchor = best_chain[0]["rect"]
+        digit_rects = [c["rect"] for c in best_chain[1:10]]
+    # cas 2 : fallback si on n’a que 9 boxes cohérentes
+    elif len(best_chain) == 9:
+        anchor = best_chain[0]["rect"]
+        digit_rects = [c["rect"] for c in best_chain[:9]]
+    else:
+        DNI_CHAIN_CACHE[page_number] = None
+        return None
+
+    result = {
+        "anchor_rect_xywh": anchor,
+        "anchor_rect_xyxy": rect_xywh_to_xyxy(anchor),
+        "digit_rects_xywh": digit_rects,
+        "digit_rects_xyxy": [rect_xywh_to_xyxy(r) for r in digit_rects],
+        "gray_for_ocr": gray_inv,
+        "binary_debug": bw,
+        "all_chain_xywh": [c["rect"] for c in best_chain],
+    }
+
+    DNI_CHAIN_CACHE[page_number] = result
+    return result
+
+
+# --------------------------------------------------------
+# REMPLACEMENT de buscar_inicio_copias()
+# --------------------------------------------------------
 def buscar_inicio_copias(pages, nbp):
-    # Detect which pages are the first page of a student's copy by locating the DNI template box.
-    
     pagesConfirmed = []
+
     for page in pages:
-        # Emit integer progress updates while scanning the rendered page images.
-        progress = int((page + 1) / nbp * 100) -1
+        progress = int((page + 1) / nbp * 100) - 1
         emitter.emit_progress(progress, "Buscando DNIs en páginas")
-        # Open the rendered page image.
-        pathToImg = build_dump_path("page", page)
 
-        #print(pathToImg)
-        img = Image.open(pathToImg)
+        detection = detect_dni_chain_on_page(page)
 
-        (largeur_image, hauteur_image) = img.size
+        if detection is not None:
+            # On sauvegarde une version grayscale inversée pour rester
+            # compatible avec la suite OCR actuelle.
+            path_dni_page = build_dump_path("DNIpage", page)
+            Image.fromarray(detection["gray_for_ocr"]).save(path_dni_page)
 
-        # Convert the page to grayscale pixel-by-pixel before inverting it for template detection.
-        for y in range(hauteur_image):
-            for x in range(largeur_image):
-                r,v,b=img.getpixel((x,y)) 
-                n_r=r*0.299
-                n_v=v*0.587
-                n_b=b*0.114
-                gray=int(n_b+n_v+n_r)
-                img.putpixel((x,y),(gray,gray,gray))
-        aux_img = build_dump_path("aux", page)
-        img.save(aux_img)        
-        image = cv.imread(aux_img)
-
-        # Invert the page so the form lines become bright and easier to detect.
-        whiteonblackdata=cv.bitwise_not(image) 
-        cv.imwrite(aux_img,whiteonblackdata) 
-
-        imgf = Image.open(aux_img).convert('L') # to obtain only 1 grey channel    
-
-
-        # Detect whether the expected DNI frame exists on this page.
-
-        k=0
-        max_h_1=0
-        min_h_1=0
-        max_l_1=0
-        min_l_1=0
-
-
-        x=280
-        for y in range(300,200,-1):  # Scan upward to find the top horizontal border.
-            z=imgf.getpixel((x,y))
-            if z>150:
-                for xb in range(x,x+50): 
-                    if z>150:
-                        k=k+1
-                        if k==25:
-                            min_h_1=y
-                        else:
-                            k=k
-        k=0
-        for y in range(310,400):  # Scan downward to find the bottom horizontal border.
-            z=imgf.getpixel((x,y))
-            if z>150:
-                for xb in range(x,x+50):
-                    if z>150:
-                        k=k+1
-                        if k==25:
-                            max_h_1=y
-                        else:
-                            k=k
-        #print("min_h_1=",min_h_1," max_h_1=",max_h_1)
-
-        k=0  
-        y=min_h_1+10
-        for x in range(300,210,-1): # Scan leftward to find the right vertical border.
-            z=imgf.getpixel((x,y))
-            if z>150:
-                for yb in range(y,y+40): 
-                    if z>150:
-                        k=k+1
-                        if k==20:
-                            min_l_1=x
-                        else:
-                            k=k
-        k=0
-        for x in range(430,370,-1): # Scan leftward to find the left vertical border.
-            z=imgf.getpixel((x,y))
-            if z>150:
-                for yb in range(y,y+40):
-                    if z>150:
-                        k=k+1
-                        if k==20:
-                            max_l_1=x
-                        else:
-                            k=k
-        #print("min_l_1=",min_l_1," max_l_1=",max_l_1)
-
-        if min_l_1!=0:
-            
-            # Keep only pages confirmed as first pages; temporary renders can be discarded.
-            os.remove(pathToImg)
-            
-            newPath = build_dump_path("DNIpage", page)
-            imgf.save(newPath)
-            newPage = [(min_l_1, min_h_1, max_l_1, max_h_1), page ]
+            anchor_rect = detection["anchor_rect_xyxy"]
+            newPage = [anchor_rect, page]
             pagesConfirmed.append(newPage)
+
+            # on peut supprimer l’image page originale si tu veux conserver
+            # la même logique que ton code initial
+            #pathToImg = build_dump_path("page", page)
+            #if os.path.exists(pathToImg):
+            #    os.remove(pathToImg)
+            pass
         else:
-            # Non-matching pages will never be used again, so remove their grade crop as well.
             pathToCalificacion = build_dump_path("calification", page)
-            os.remove(pathToCalificacion)
-        
-        os.remove(aux_img)
+            if os.path.exists(pathToCalificacion):
+                os.remove(pathToCalificacion)
+
     return pagesConfirmed
 
 
-    
-    
 def split_in_num_cpu(nbp):
     # Distribute page numbers across CPU buckets to parallelize first-page detection.
     cores = os.cpu_count()
@@ -644,150 +978,36 @@ def detect_first_pages_like_main(nbp):
     return coordsDNI, ListNumFirstPage
 
 
+# --------------------------------------------------------
+# REMPLACEMENT de compute_coords_from_main_block()
+# --------------------------------------------------------
 def compute_coords_from_main_block(j, coordsDNI, ListNumFirstPage):
-    # Bloc repris de main(), sans changer les lignes de calcul.
+    page_number = ListNumFirstPage[j - 1]
+
+    detection = detect_dni_chain_on_page(page_number)
+    if detection is None:
+        page_path = build_dump_path("page", page_number)
+        dni_path = build_dump_path("DNIpage", page_number)
+        raise RuntimeError(
+            f"Aucune chaîne DNI détectée pour la page {page_number}. "
+            f"page_exists={os.path.exists(page_path)} "
+            f"dni_exists={os.path.exists(dni_path)}"
+        )
+
+    pathToDniPage = build_dump_path("DNIpage", page_number)
+    if not os.path.exists(pathToDniPage):
+        Image.fromarray(detection["gray_for_ocr"]).save(pathToDniPage)
+
+    imgf = Image.open(pathToDniPage).convert("L")
+
     coords = np.zeros((9, 1, 4), dtype=int)
-    k=0
-    max_h=0
-    min_h=0
-    max_l=0
-    min_l=0
 
-    pathToDniPage = build_dump_path("DNIpage", ListNumFirstPage[j-1])
-
-    imgf = Image.open(pathToDniPage).convert('L')
-    # Detect the first digit box using the anchor box found on the template.
-    x= coordsDNI[j-1][2]+10    
-    for y in range(290,210,-1):
-        z=imgf.getpixel((x,y))
-        if z>100:
-            for xb in range(x,x+50):
-                if z>100:
-                    k=k+1
-                    if k==25:
-                        min_h=y
-                    else:
-                        k=k
-    k=0
-    for y in range(350,400):
-        z=imgf.getpixel((x,y))
-        if z>100:
-            for xb in range(x,x+50):
-                if z>100:
-                    k=k+1
-                    if k==25:
-                        max_h=y
-                    else:
-                        k=k
-
-    k=0  
-    y=min_h+10
-    for x in range(430,370,-1):
-        z=imgf.getpixel((x,y))
-        if z>100:
-            for yb in range(y,y+40):
-                if z>100:
-                    k=k+1
-                    if k==20:
-                        min_l=x
-                    else:
-                        k=k
-    k=0
-    for x in range(540,480,-1):
-        z=imgf.getpixel((x,y))
-        if z>100:
-            for yb in range(y,y+40):
-                if z>100:
-                    k=k+1
-                    if k==20:
-                        max_l=x
-                    else:
-                        k=k
-
-    if min_l != 0:
-        coords[0][0][0]= min_l
-    else :
-        coords[0][0][0] = coordsDNI[j-1][2] # =max_l_1
-    if min_h != 0:
-        coords[0][0][1]= min_h
-    else :
-        coords[0][0][1]= coordsDNI[j-1][1] #=min_h_1
-    if max_l != 0:
-        coords[0][0][2]= max_l
-    else :
-        coords[0][0][2]= coordsDNI[j-1][2] +140 #=max_l_1 + 140
-    if max_h !=0 :
-        coords[0][0][3]= max_h
-    else :
-        coords[0][0][3]= coordsDNI[j-1][3] #=max_h_1
-
-    
-    # Infer the remaining 8 boxes by walking right from the previous box.
-    for d in range(1, len(coords)) :
-
-        x= coords[d-1][0][0]+10
-        for y in range(coords[d-1][0][1]+10,coords[d-1][0][1]-10,-1):
-            z=imgf.getpixel((x,y))
-            if z>100:
-                for xb in range(x,x+50):
-                    if z>100:
-                        k=k+1
-                        if k==25:
-                            min_h=y
-                        else:
-                            k=k
-        k=0
-        for y in range(coords[d-1][0][3]-10,coords[d-1][0][3]+10):
-            z=imgf.getpixel((x,y))
-            if z>100:
-                for xb in range(x,x+50):
-                    if z>100:
-                        k=k+1
-                        if k==25:
-                            max_h=y
-                        else:
-                            k=k
-
-        k=0  
-        y=min_h+10
-        for x in range(coords[d-1][0][2]+10,coords[d-1][0][2]-10,-1):
-            z=imgf.getpixel((x,y))
-            if z>100:
-                for yb in range(y,y+40):
-                    if z>100:
-                        k=k+1
-                        if k==20:
-                            min_l=x
-                        else:
-                            k=k
-        k=0
-        for x in range(coords[d-1][0][2]+130,coords[d-1][0][2]+90,-1):
-            z=imgf.getpixel((x,y))
-            if z>100:
-                for yb in range(y,y+40):
-                    if z>100:
-                        k=k+1
-                        if k==20:
-                            max_l=x
-                        else:
-                            k=k
-
-        if min_l != 0 :
-            coords[d][0][0]= min_l
-        else :
-            coords[d][0][0]= coords[d-1][0][2]
-        if min_h != 0 :
-            coords[d][0][1]= min_h
-        else :
-            coords[d][0][1]= coords[d-1][0][1]
-        if max_l !=0 :
-            coords[d][0][2]= max_l
-        else :
-            coords[d][0][2]= coords[d][0][0]+104
-        if max_h !=0 :
-            coords[d][0][3]= max_h
-        else : 
-            coords[d][0][3]= coords[d-1][0][3]
+    for idx, box in enumerate(detection["digit_rects_xyxy"][:9]):
+        x0, y0, x1, y1 = box
+        coords[idx][0][0] = int(x0)
+        coords[idx][0][1] = int(y0)
+        coords[idx][0][2] = int(x1)
+        coords[idx][0][3] = int(y1)
 
     return imgf, pathToDniPage, coords
 
