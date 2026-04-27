@@ -486,9 +486,7 @@ def rect_iou(a, b):
     ih = max(0, iy2 - iy1)
     inter = iw * ih
     union = rect_area(a) + rect_area(b) - inter
-    if union <= 0:
-        return 0.0
-    return inter / union
+    return inter / union if union > 0 else 0.0
 
 def order_points_clockwise(pts):
     pts = np.array(pts, dtype=np.float32).reshape(-1, 2)
@@ -540,40 +538,74 @@ def light_deskew(gray_inv):
 
     return rotate_image_keep_bounds(gray_inv, angle)
 
-def preprocess_dni_page_from_path(path_to_img):
+def preprocess_dni_page_multi(path_to_img):
     """
-    Retourne :
-    - gray_inv : image grayscale inversée, compatible avec la logique OCR actuelle
-    - bw       : image binaire pour la détection des boxes
+    Retourne plusieurs variantes binaires de la meme page
+    pour augmenter le recall des premieres pages.
     """
     img = cv.imread(path_to_img, cv.IMREAD_COLOR)
     if img is None:
-        return None, None
+        return []
 
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-
-    # Même esprit que ton code actuel : inversion pour avoir traits / texte en blanc
     gray_inv = cv.bitwise_not(gray)
 
-    # léger deskew
-    gray_inv = light_deskew(gray_inv)
+    variants = []
 
-    # binarisation robuste
+    # 1) adaptive standard
     blur = cv.GaussianBlur(gray_inv, (3, 3), 0)
-    bw = cv.adaptiveThreshold(
-        blur,
-        255,
+    bw1 = cv.adaptiveThreshold(
+        blur, 255,
         cv.ADAPTIVE_THRESH_GAUSSIAN_C,
         cv.THRESH_BINARY,
-        31,
-        -5
+        31, -5
     )
+    bw1 = cv.morphologyEx(
+        bw1, cv.MORPH_CLOSE,
+        cv.getStructuringElement(cv.MORPH_RECT, (3, 3)),
+        iterations=1
+    )
+    variants.append((gray_inv, bw1, "adaptive_close"))
 
-    # fermeture morphologique pour reconnecter les bords des cases
-    kernel = cv.getStructuringElement(cv.MORPH_RECT, (3, 3))
-    bw = cv.morphologyEx(bw, cv.MORPH_CLOSE, kernel, iterations=1)
+    # 2) adaptive + petite dilation pour recoller les bords cassés
+    bw2 = cv.adaptiveThreshold(
+        blur, 255,
+        cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv.THRESH_BINARY,
+        31, -5
+    )
+    bw2 = cv.morphologyEx(
+        bw2, cv.MORPH_CLOSE,
+        cv.getStructuringElement(cv.MORPH_RECT, (3, 3)),
+        iterations=1
+    )
+    bw2 = cv.dilate(
+        bw2,
+        cv.getStructuringElement(cv.MORPH_RECT, (2, 2)),
+        iterations=1
+    )
+    variants.append((gray_inv, bw2, "adaptive_close_dilate"))
 
-    return gray_inv, bw
+    # 3) otsu
+    blur2 = cv.GaussianBlur(gray_inv, (5, 5), 0)
+    _, bw3 = cv.threshold(blur2, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU)
+    bw3 = cv.morphologyEx(
+        bw3, cv.MORPH_CLOSE,
+        cv.getStructuringElement(cv.MORPH_RECT, (3, 3)),
+        iterations=1
+    )
+    variants.append((gray_inv, bw3, "otsu_close"))
+
+    # 4) canny + fermeture plus forte
+    edges = cv.Canny(gray_inv, 35, 110)
+    bw4 = cv.morphologyEx(
+        edges, cv.MORPH_CLOSE,
+        cv.getStructuringElement(cv.MORPH_RECT, (5, 3)),
+        iterations=1
+    )
+    variants.append((gray_inv, bw4, "canny_close"))
+
+    return variants
 
 def box_metrics(binary_img, rect):
     """
@@ -592,42 +624,30 @@ def box_metrics(binary_img, rect):
 
     roi = binary_img[y:y+h, x:x+w]
     if roi.size == 0:
-        return {
-            "border_fill_ratio": 0.0,
-            "inner_fill_ratio": 0.0,
-            "corner_fill_ratio": 0.0
-        }
+        return {"border": 0.0, "inner": 0.0, "corners": 0.0}
 
     t = max(2, int(min(w, h) * 0.12))
-
     border_mask = np.ones_like(roi, dtype=np.uint8)
     if h > 2 * t and w > 2 * t:
         border_mask[t:h-t, t:w-t] = 0
 
     inner_mask = 1 - border_mask
 
-    border_pixels = roi[border_mask == 1]
-    inner_pixels = roi[inner_mask == 1]
-
-    border_fill_ratio = float(np.mean(border_pixels > 0)) if border_pixels.size else 0.0
-    inner_fill_ratio = float(np.mean(inner_pixels > 0)) if inner_pixels.size else 0.0
+    border = float(np.mean(roi[border_mask == 1] > 0)) if np.any(border_mask == 1) else 0.0
+    inner = float(np.mean(roi[inner_mask == 1] > 0)) if np.any(inner_mask == 1) else 0.0
 
     p = max(2, int(min(w, h) * 0.16))
-    corners = [
+    corner_rois = [
         roi[0:p, 0:p],
         roi[0:p, max(0, w-p):w],
         roi[max(0, h-p):h, 0:p],
         roi[max(0, h-p):h, max(0, w-p):w],
     ]
-    corner_fill_ratio = float(np.mean([np.mean(c > 0) for c in corners if c.size > 0])) if corners else 0.0
+    corners = float(np.mean([np.mean(c > 0) for c in corner_rois if c.size > 0])) if corner_rois else 0.0
 
-    return {
-        "border_fill_ratio": border_fill_ratio,
-        "inner_fill_ratio": inner_fill_ratio,
-        "corner_fill_ratio": corner_fill_ratio,
-    }
+    return {"border": border, "inner": inner, "corners": corners}
 
-def detect_box_candidates(binary_img):
+def detect_box_candidates(binary_img, recall_mode=False):
     """
     Détecte des cases candidates :
     - contour fermé
@@ -637,68 +657,291 @@ def detect_box_candidates(binary_img):
     """
     contours, _ = cv.findContours(binary_img, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
     H, W = binary_img.shape[:2]
-
-    candidates = []
     img_area = H * W
 
+    cands = []
     for cnt in contours:
         area = cv.contourArea(cnt)
-        if area < 1200 or area > img_area * 0.08:
+        if area < 700 or area > img_area * 0.10:
             continue
 
         peri = cv.arcLength(cnt, True)
         approx = cv.approxPolyDP(cnt, 0.03 * peri, True)
 
-        if len(approx) != 4:
+        # en recall mode, on accepte aussi 5 coins si la bounding box est bonne
+        if len(approx) not in (4, 5):
             continue
 
-        pts = order_points_clockwise(approx.reshape(-1, 2))
-        x, y, w, h = cv.boundingRect(pts.astype(np.int32))
-
-        if w < 25 or h < 25:
+        x, y, w, h = cv.boundingRect(approx)
+        if w < 22 or h < 22:
             continue
 
         ratio = w / float(h)
-        if ratio < 0.45 or ratio > 2.20:
+        if ratio < 0.50 or ratio > 1.95:
             continue
 
-        metrics = box_metrics(binary_img, (x, y, w, h))
+        m = box_metrics(binary_img, (x, y, w, h))
 
-        # Coins présents + bords visibles + minimum de contenu interne
-        if metrics["corner_fill_ratio"] < 0.05:
-            continue
-        if metrics["border_fill_ratio"] < 0.12:
-            continue
-        if metrics["inner_fill_ratio"] < 0.005:
-            continue
+        if recall_mode:
+            if m["corners"] < 0.02:
+                continue
+            if m["border"] < 0.05:
+                continue
+        else:
+            if m["corners"] < 0.04:
+                continue
+            if m["border"] < 0.10:
+                continue
 
         score = (
-            2.2 * metrics["corner_fill_ratio"] +
-            2.8 * metrics["border_fill_ratio"] +
-            1.0 * metrics["inner_fill_ratio"]
+            2.5 * m["corners"] +
+            2.5 * m["border"] +
+            0.7 * m["inner"]
         )
 
-        candidates.append({
+        cands.append({
             "rect": (x, y, w, h),
-            "metrics": metrics,
+            "metrics": m,
             "score": score,
         })
 
-    # déduplication des rectangles qui se recouvrent trop
-    candidates = sorted(candidates, key=lambda d: d["score"], reverse=True)
+    cands = sorted(cands, key=lambda d: d["score"], reverse=True)
     filtered = []
-    for cand in candidates:
+    for c in cands:
         keep = True
-        for kept in filtered:
-            if rect_iou(cand["rect"], kept["rect"]) > 0.65:
+        for f in filtered:
+            if rect_iou(c["rect"], f["rect"]) > 0.6:
                 keep = False
                 break
         if keep:
-            filtered.append(cand)
+            filtered.append(c)
 
-    # tri gauche -> droite
     filtered = sorted(filtered, key=lambda d: (d["rect"][1], d["rect"][0]))
     return filtered
+
+def cluster_boxes_by_row(candidates):
+    """
+    Groupe les boxes par ligne horizontale.
+    """
+    rows = []
+    for cand in sorted(candidates, key=lambda d: rect_center(d["rect"])[1]):
+        cy = rect_center(cand["rect"])[1]
+        placed = False
+        for row in rows:
+            row_cy = np.mean([rect_center(x["rect"])[1] for x in row])
+            row_h = np.mean([x["rect"][3] for x in row])
+            if abs(cy - row_cy) <= 0.45 * row_h:
+                row.append(cand)
+                placed = True
+                break
+        if not placed:
+            rows.append([cand])
+
+    for row in rows:
+        row.sort(key=lambda d: d["rect"][0])
+
+    return rows
+
+
+def score_9_digit_window(window):
+    """
+    Score d'une suite de 8 ou 9 cases DNI.
+    Plus la suite est régulière, plus le score est élevé.
+    """
+    n = len(window)
+    if n < 2:
+        return -1e9
+
+    rects = [w["rect"] for w in window]
+    widths = np.array([r[2] for r in rects], dtype=np.float32)
+    heights = np.array([r[3] for r in rects], dtype=np.float32)
+    ys = np.array([rect_center(r)[1] for r in rects], dtype=np.float32)
+
+    gaps = []
+    for i in range(n - 1):
+        x1 = rects[i][0] + rects[i][2]
+        x2 = rects[i + 1][0]
+        gaps.append(x2 - x1)
+
+    if len(gaps) == 0:
+        return -1e9
+
+    gaps = np.array(gaps, dtype=np.float32)
+
+    mean_score = float(np.mean([w["score"] for w in window]))
+    reg_pen = (
+        np.std(widths) / (np.mean(widths) + 1e-6) +
+        np.std(heights) / (np.mean(heights) + 1e-6) +
+        np.std(ys) / (np.mean(heights) + 1e-6) +
+        np.std(gaps) / (max(np.mean(np.abs(gaps)), 1.0))
+    )
+
+    # Bonus si on a 9 boxes complètes
+    length_bonus = 4.0 if n == 9 else 0.0
+
+    return mean_score * 10.0 - 8.0 * reg_pen + length_bonus
+
+
+def find_best_9_digit_sequence(rows):
+    """
+    Cherche la meilleure suite de 9 boxes.
+    Si 9 n'est pas possible, accepte une suite de 8 en fallback.
+    """
+    best = None
+    best_score = -1e9
+
+    for row in rows:
+        row_len = len(row)
+
+        # priorité aux fenêtres de 9
+        if row_len >= 9:
+            for start in range(0, row_len - 9 + 1):
+                window = row[start:start + 9]
+                score = score_9_digit_window(window)
+
+                if score > best_score:
+                    best_score = score
+                    best = {
+                        "row": row,
+                        "start": start,
+                        "window": window,
+                        "score": score,
+                    }
+
+        # fallback : fenêtres de 8 seulement si pas assez de 9
+        elif row_len == 8:
+            window = row[:8]
+            score = score_9_digit_window(window)
+
+            if score > best_score:
+                best_score = score
+                best = {
+                    "row": row,
+                    "start": 0,
+                    "window": window,
+                    "score": score,
+                }
+
+    return best
+
+
+def find_anchor_left_of_digits(row, digit_window):
+    """
+    Cherche une ancre a gauche des digits, sans chevauchement.
+    Si elle manque, on la reconstruit.
+    """
+    first_digit = digit_window[0]["rect"]
+    fd_x, fd_y, fd_w, fd_h = first_digit
+    fd_cy = rect_center(first_digit)[1]
+
+    left_candidates = []
+    for cand in row:
+        r = cand["rect"]
+        x, y, w, h = r
+        cy = rect_center(r)[1]
+        gap = fd_x - (x + w)
+
+        # strictement a gauche, sans overlap
+        if gap < 2:
+            continue
+
+        if abs(cy - fd_cy) > 0.35 * max(h, fd_h):
+            continue
+
+        if not (0.60 <= w / float(fd_w) <= 1.50):
+            continue
+
+        if not (0.60 <= h / float(fd_h) <= 1.50):
+            continue
+
+        # l'ancre doit etre la plus proche a gauche
+        score = -abs(gap - 4) + 2.0 * cand["metrics"]["border"]
+        left_candidates.append((score, cand))
+
+    if left_candidates:
+        left_candidates.sort(key=lambda x: x[0], reverse=True)
+        return left_candidates[0][1]["rect"], False
+
+    # fallback : ancre synthetique
+    synth_gap = max(4, int(0.08 * fd_w))
+    anchor_w = fd_w
+    anchor_h = fd_h
+    anchor_x = max(0, fd_x - synth_gap - anchor_w)
+    anchor_y = fd_y
+    return (anchor_x, anchor_y, anchor_w, anchor_h), True
+
+
+def detect_dni_chain_on_page(page_number, mode="coords_detect"):
+    """
+    Détecte :
+    - la boxe ancre
+    - les 9 boxes du DNI à sa droite
+    """
+
+    global DNI_CHAIN_CACHE
+
+    cache_key = (page_number, mode)
+    if cache_key in DNI_CHAIN_CACHE:
+        return DNI_CHAIN_CACHE[cache_key]
+
+    path_to_img = build_dump_path("page", page_number)
+    variants = preprocess_dni_page_multi(path_to_img)
+    if not variants:
+        DNI_CHAIN_CACHE[cache_key] = None
+        return None
+
+    best_result = None
+    best_score = -1e9
+
+    for gray_inv, bw, variant_name in variants:
+        recall_mode = (mode == "page_detect")
+        candidates = detect_box_candidates(bw, recall_mode=recall_mode)
+        if len(candidates) < 7:
+            continue
+
+        rows = cluster_boxes_by_row(candidates)
+
+        if mode == "page_detect":
+            best_seq = find_best_digit_sequence_for_page(rows, bw)
+        else:
+            best_seq = find_best_9_digit_sequence(rows)
+
+        if best_seq is None:
+            continue
+
+        digit_rects = [w["rect"] for w in best_seq["window"]]
+        anchor_rect, synthetic_anchor = find_anchor_left_of_digits(best_seq["row"], best_seq["window"])
+
+        seq_len = len(digit_rects)
+
+        if mode == "page_detect":
+            # pour page_detect on accepte dès 7 boxes cohérentes
+            if seq_len < 7:
+                continue
+            accept_score = best_seq["score"] + (1.5 if not synthetic_anchor else -0.5)
+        else:
+            # pour coords_detect on veut 8 ou 9
+            if seq_len < 8:
+                continue
+            accept_score = best_seq["score"] + (2.0 if not synthetic_anchor else -1.0)
+
+        if accept_score > best_score:
+            best_score = accept_score
+            best_result = {
+                "anchor_rect_xywh": anchor_rect,
+                "anchor_rect_xyxy": rect_xywh_to_xyxy(anchor_rect),
+                "digit_rects_xywh": digit_rects[:9],
+                "digit_rects_xyxy": [rect_xywh_to_xyxy(r) for r in digit_rects[:9]],
+                "gray_for_ocr": gray_inv,
+                "binary_debug": bw,
+                "score": accept_score,
+                "variant_name": variant_name,
+                "synthetic_anchor": synthetic_anchor,
+                "seq_len": seq_len,
+            }
+
+    DNI_CHAIN_CACHE[cache_key] = best_result
+    return best_result
 
 def compatible_next_box(prev_rect, next_rect):
     """
@@ -797,70 +1040,7 @@ def chain_global_score(chain):
 
     return len(chain) * 10.0 + float(np.mean(scores)) - 5.0 * consistency_penalty
 
-def detect_dni_chain_on_page(page_number):
-    """
-    Détecte :
-    - la boxe ancre
-    - les 9 boxes du DNI à sa droite
-    """
-    global DNI_CHAIN_CACHE
 
-    if page_number in DNI_CHAIN_CACHE:
-        return DNI_CHAIN_CACHE[page_number]
-
-    path_to_img = build_dump_path("page", page_number)
-    gray_inv, bw = preprocess_dni_page_from_path(path_to_img)
-
-    if gray_inv is None or bw is None:
-        DNI_CHAIN_CACHE[page_number] = None
-        return None
-
-    candidates = detect_box_candidates(bw)
-    if len(candidates) < 9:
-        DNI_CHAIN_CACHE[page_number] = None
-        return None
-
-    best_chain = None
-    best_score = -1e9
-
-    # on cherche idéalement 10 boxes : 1 ancre + 9 boxes de DNI
-    for seed_idx in range(len(candidates)):
-        chain = build_chain_from_seed(candidates, seed_idx, target_len=10)
-        score = chain_global_score(chain)
-
-        if score > best_score:
-            best_score = score
-            best_chain = chain
-
-    if best_chain is None:
-        DNI_CHAIN_CACHE[page_number] = None
-        return None
-
-    # cas 1 : on a bien 10 boxes -> ancre + 9 cases
-    if len(best_chain) >= 10:
-        best_chain = best_chain[:10]
-        anchor = best_chain[0]["rect"]
-        digit_rects = [c["rect"] for c in best_chain[1:10]]
-    # cas 2 : fallback si on n’a que 9 boxes cohérentes
-    elif len(best_chain) == 9:
-        anchor = best_chain[0]["rect"]
-        digit_rects = [c["rect"] for c in best_chain[:9]]
-    else:
-        DNI_CHAIN_CACHE[page_number] = None
-        return None
-
-    result = {
-        "anchor_rect_xywh": anchor,
-        "anchor_rect_xyxy": rect_xywh_to_xyxy(anchor),
-        "digit_rects_xywh": digit_rects,
-        "digit_rects_xyxy": [rect_xywh_to_xyxy(r) for r in digit_rects],
-        "gray_for_ocr": gray_inv,
-        "binary_debug": bw,
-        "all_chain_xywh": [c["rect"] for c in best_chain],
-    }
-
-    DNI_CHAIN_CACHE[page_number] = result
-    return result
 
 
 # --------------------------------------------------------
@@ -873,24 +1053,17 @@ def buscar_inicio_copias(pages, nbp):
         progress = int((page + 1) / nbp * 100) - 1
         emitter.emit_progress(progress, "Buscando DNIs en páginas")
 
-        detection = detect_dni_chain_on_page(page)
+        detection = detect_dni_chain_on_page(page, mode="page_detect")
 
         if detection is not None:
-            # On sauvegarde une version grayscale inversée pour rester
-            # compatible avec la suite OCR actuelle.
             path_dni_page = build_dump_path("DNIpage", page)
             Image.fromarray(detection["gray_for_ocr"]).save(path_dni_page)
 
             anchor_rect = detection["anchor_rect_xyxy"]
-            newPage = [anchor_rect, page]
-            pagesConfirmed.append(newPage)
+            pagesConfirmed.append([anchor_rect, page])
 
-            # on peut supprimer l’image page originale si tu veux conserver
-            # la même logique que ton code initial
-            #pathToImg = build_dump_path("page", page)
-            #if os.path.exists(pathToImg):
-            #    os.remove(pathToImg)
-            pass
+            # IMPORTANT: on garde page-XX.png
+            # car la suite peut relancer la detection
         else:
             pathToCalificacion = build_dump_path("calification", page)
             if os.path.exists(pathToCalificacion):
@@ -984,32 +1157,51 @@ def detect_first_pages_like_main(nbp):
 def compute_coords_from_main_block(j, coordsDNI, ListNumFirstPage):
     page_number = ListNumFirstPage[j - 1]
 
-    detection = detect_dni_chain_on_page(page_number)
+    # 1) tentative stricte
+    detection = detect_dni_chain_on_page(page_number, mode="coords_detect")
+
+    # 2) fallback permissif
     if detection is None:
-        page_path = build_dump_path("page", page_number)
-        dni_path = build_dump_path("DNIpage", page_number)
-        raise RuntimeError(
-            f"Aucune chaîne DNI détectée pour la page {page_number}. "
-            f"page_exists={os.path.exists(page_path)} "
-            f"dni_exists={os.path.exists(dni_path)}"
-        )
+        detection = detect_dni_chain_on_page(page_number, mode="page_detect")
 
     pathToDniPage = build_dump_path("DNIpage", page_number)
-    if not os.path.exists(pathToDniPage):
+
+    # si le fichier DNIpage n'existe pas encore mais qu'on a une detection, on le sauve
+    if detection is not None and not os.path.exists(pathToDniPage):
         Image.fromarray(detection["gray_for_ocr"]).save(pathToDniPage)
+
+    # fallback ultime : si toujours pas d'image DNI, on repart de page-XX.png
+    if not os.path.exists(pathToDniPage):
+        page_path = build_dump_path("page", page_number)
+        if os.path.exists(page_path):
+            img = cv.imread(page_path, cv.IMREAD_GRAYSCALE)
+            if img is None:
+                raise RuntimeError(f"Impossible de lire page-{page_number}")
+            img_inv = cv.bitwise_not(img)
+            Image.fromarray(img_inv).save(pathToDniPage)
+        else:
+            raise RuntimeError(
+                f"Ni detection ni image disponible pour la page {page_number}"
+            )
 
     imgf = Image.open(pathToDniPage).convert("L")
 
-    coords = np.zeros((9, 1, 4), dtype=int)
+    # 3) si on a une detection utilisable, on construit les coords depuis les boxes detectees
+    if detection is not None:
+        digit_boxes = detection.get("digit_rects_xyxy", [])
+        coords = _coords_from_digit_boxes(digit_boxes)
+        if coords is not None:
+            return imgf, pathToDniPage, coords
 
-    for idx, box in enumerate(detection["digit_rects_xyxy"][:9]):
-        x0, y0, x1, y1 = box
-        coords[idx][0][0] = int(x0)
-        coords[idx][0][1] = int(y0)
-        coords[idx][0][2] = int(x1)
-        coords[idx][0][3] = int(y1)
+    # 4) fallback final : reconstruire les boxes depuis l'ancre deja stockee
+    anchor_rect = coordsDNI[j - 1]
+    fallback_boxes = _synthetic_boxes_from_anchor(anchor_rect)
+    coords = _coords_from_digit_boxes(fallback_boxes)
 
-    return imgf, pathToDniPage, coords
+    if coords is not None:
+        return imgf, pathToDniPage, coords
+
+    raise RuntimeError(f"Impossible de construire les boxes DNI pour la page {page_number}")
 
 
 def predict_dni_from_main_block(j, coordsDNI, ListNumFirstPage, model_path=None):
@@ -1087,3 +1279,190 @@ def predict_dni_from_main_block(j, coordsDNI, ListNumFirstPage, model_path=None)
         "prediction_digits": [int(x) for x in predictions2],
         "prediction_str": prediction_str,
     }
+def support_line_below(binary_img, digit_rects):
+    """
+    Vérifie qu'il existe une longue ligne horizontale sous la rangée du DNI.
+    C'est un indice fort d'une vraie première page.
+    """
+    if len(digit_rects) < 7:
+        return 0.0
+
+    xs = [r[0] for r in digit_rects]
+    ys = [r[1] for r in digit_rects]
+    ws = [r[2] for r in digit_rects]
+    hs = [r[3] for r in digit_rects]
+
+    x_left = max(0, min(xs) - int(np.mean(ws) * 0.6))
+    x_right = min(binary_img.shape[1], max([x + w for x, y, w, h in digit_rects]) + int(np.mean(ws) * 0.6))
+    y_base = int(np.mean([y + h for x, y, w, h in digit_rects]) + np.mean(hs) * 0.9)
+
+    if y_base < 0 or y_base >= binary_img.shape[0]:
+        return 0.0
+
+    band_h = max(3, int(np.mean(hs) * 0.18))
+    y0 = max(0, y_base - band_h)
+    y1 = min(binary_img.shape[0], y_base + band_h)
+
+    roi = binary_img[y0:y1, x_left:x_right]
+    if roi.size == 0:
+        return 0.0
+
+    # taux de pixels allumés par ligne
+    row_fill = np.mean(roi > 0, axis=1)
+    return float(np.max(row_fill))
+
+def score_digit_row_for_page(window, binary_img):
+    """
+    Score recall pour décider si une page est probablement une première page.
+    Ici on privilégie le rappel.
+    """
+    n = len(window)
+    if n < 7:
+        return -1e9
+
+    rects = [w["rect"] for w in window]
+    widths = np.array([r[2] for r in rects], dtype=np.float32)
+    heights = np.array([r[3] for r in rects], dtype=np.float32)
+    ys = np.array([rect_center(r)[1] for r in rects], dtype=np.float32)
+
+    gaps = []
+    for i in range(n - 1):
+        x1 = rects[i][0] + rects[i][2]
+        x2 = rects[i + 1][0]
+        gaps.append(x2 - x1)
+
+    gaps = np.array(gaps, dtype=np.float32) if gaps else np.array([0], dtype=np.float32)
+
+    mean_box_score = float(np.mean([w["score"] for w in window]))
+    line_support = support_line_below(binary_img, rects)
+
+    reg_pen = (
+        np.std(widths) / (np.mean(widths) + 1e-6) +
+        np.std(heights) / (np.mean(heights) + 1e-6) +
+        np.std(ys) / (np.mean(heights) + 1e-6)
+    )
+
+    gap_pen = np.std(gaps) / max(np.mean(np.abs(gaps)), 1.0)
+
+    length_bonus = 0.0
+    if n == 9:
+        length_bonus = 5.0
+    elif n == 8:
+        length_bonus = 2.5
+    elif n == 7:
+        length_bonus = 1.0
+
+    return (
+        mean_box_score * 10.0 +
+        line_support * 6.0 +
+        length_bonus -
+        7.0 * reg_pen -
+        4.0 * gap_pen
+    )
+    
+def find_best_digit_sequence_for_page(rows, binary_img):
+    """
+    Cherche la meilleure suite de 7 à 9 boxes pour le rappel.
+    """
+    best = None
+    best_score = -1e9
+
+    for row in rows:
+        row_len = len(row)
+        if row_len < 7:
+            continue
+
+        for target_len in (9, 8, 7):
+            if row_len < target_len:
+                continue
+
+            for start in range(0, row_len - target_len + 1):
+                window = row[start:start + target_len]
+                score = score_digit_row_for_page(window, binary_img)
+
+                if score > best_score:
+                    best_score = score
+                    best = {
+                        "row": row,
+                        "start": start,
+                        "window": window,
+                        "score": score,
+                    }
+
+    return best
+
+def _pad_digit_boxes_to_9(digit_boxes):
+    """
+    Garantit 9 boxes.
+    - 9 -> inchangé
+    - 8 -> extrapole la 9e
+    - <8 -> retourne tel quel
+    """
+    digit_boxes = list(digit_boxes)
+
+    if len(digit_boxes) >= 9:
+        return digit_boxes[:9]
+
+    if len(digit_boxes) == 8:
+        x0, y0, x1, y1 = digit_boxes[-1]
+        w = x1 - x0
+        h = y1 - y0
+
+        if len(digit_boxes) >= 2:
+            px0, py0, px1, py1 = digit_boxes[-2]
+            gap = x0 - px1
+            if gap < 0:
+                gap = max(2, int(0.05 * w))
+        else:
+            gap = max(2, int(0.05 * w))
+
+        new_box = (x1 + gap, y0, x1 + gap + w, y1)
+        digit_boxes.append(new_box)
+
+    return digit_boxes
+
+
+def _coords_from_digit_boxes(digit_boxes):
+    coords = np.zeros((9, 1, 4), dtype=int)
+
+    digit_boxes = _pad_digit_boxes_to_9(digit_boxes)
+
+    if len(digit_boxes) < 8:
+        return None
+
+    # si on n'a que 8 boxes après padding raté, on duplique la dernière
+    while len(digit_boxes) < 9:
+        digit_boxes.append(digit_boxes[-1])
+
+    for idx, box in enumerate(digit_boxes[:9]):
+        x0, y0, x1, y1 = box
+        coords[idx][0][0] = int(x0)
+        coords[idx][0][1] = int(y0)
+        coords[idx][0][2] = int(x1)
+        coords[idx][0][3] = int(y1)
+
+    return coords
+
+
+def _synthetic_boxes_from_anchor(anchor_rect_xyxy):
+    """
+    Dernier fallback si aucune detection de boxes n'est dispo.
+    Reconstruit 9 boxes a droite de l'ancre.
+    """
+    ax0, ay0, ax1, ay1 = anchor_rect_xyxy
+    anchor_w = max(10, ax1 - ax0)
+    anchor_h = max(10, ay1 - ay0)
+
+    gap = max(2, int(0.05 * anchor_w))
+    box_w = anchor_w
+    box_h = anchor_h
+
+    boxes = []
+    x = ax1 + gap
+    y = ay0
+
+    for _ in range(9):
+        boxes.append((x, y, x + box_w, y + box_h))
+        x += box_w + gap
+
+    return boxes
