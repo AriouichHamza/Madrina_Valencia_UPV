@@ -23,6 +23,12 @@ Thumbs.db
 # Logs
 *.log
 
+# old folder CNN 
+AsistenteWebTFGBackend/CNN_Handwriting_Recognition
+# Original folder
+OriginalVersion/
+AsistenteWebTFGBackend/user_data
+
 #codex
 .codex
 *.png

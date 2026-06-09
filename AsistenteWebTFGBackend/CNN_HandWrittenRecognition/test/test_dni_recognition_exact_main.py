@@ -140,11 +140,11 @@ def main():
     print(f"Résultats OCR: {results_csv}")
     print(f"Metrics: {metrics_path}")
 
-    if not args.keep_workdir:
-        shutil.rmtree(work_dir, ignore_errors=True)
-        print("Workdir temporaire supprimé.")
-    else:
-        print(f"Workdir conservé: {work_dir}")
+    #if not args.keep_workdir:
+    #    shutil.rmtree(work_dir, ignore_errors=True)
+    #    print("Workdir temporaire supprimé.")
+    #else:
+    #    print(f"Workdir conservé: {work_dir}")
 
 
 if __name__ == "__main__":

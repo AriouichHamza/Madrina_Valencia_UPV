@@ -3,19 +3,22 @@
 # Modify the paths below according to your environment
 
 # Path to the PDF exam file
+#PDF_PATH="/home/ariouich/Bureau/valencia/Madrina/OriginalVersion/transfer_279434_files_ec8e0eac/5.pdf"
 PDF_PATH="/home/ariouich/Bureau/valencia/Madrina/OriginalVersion/P1_nov_para_jefferson/1.pdf"
+
 
 # Path to the trained model
 MODEL_PATH="/home/ariouich/Bureau/valencia/Madrina/AsistenteWebTFGBackend/CNN_HandWrittenRecognition/exammodel4.pt"
 
 # Path to the reference file (ground truth CSV or students JSON)
 REF_PATH="/home/ariouich/Bureau/valencia/Madrina/AsistenteWebTFGBackend/CNN_HandWrittenRecognition/test/students.json"
-
+#REF_PATH="/home/ariouich/Bureau/valencia/Madrina/OriginalVersion/transfer_279434_files_ec8e0eac/FCO_11542_2024.json"
 # Output directory for results
-OUTPUT_DIR="./debug_test1_new_boxes_detection02"
+OUTPUT_DIR="./debug_test1_new_boxes_detection06"
 
 # Mode: "ground_truth" (default) or "--students" (for JSON students file)
 MODE="--students"
+
 
 # ============================================================
 # Usage example:

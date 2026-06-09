@@ -673,11 +673,11 @@ def detect_box_candidates(binary_img, recall_mode=False):
             continue
 
         x, y, w, h = cv.boundingRect(approx)
-        if w < 22 or h < 22:
+        if w < 26 or h < 26:
             continue
 
         ratio = w / float(h)
-        if ratio < 0.50 or ratio > 1.95:
+        if ratio < 0.55 or ratio > 1.75:
             continue
 
         m = box_metrics(binary_img, (x, y, w, h))
@@ -741,6 +741,187 @@ def cluster_boxes_by_row(candidates):
         row.sort(key=lambda d: d["rect"][0])
 
     return rows
+def filter_row_candidates_by_median_geometry(row):
+    if len(row) < 3:
+        return row
+
+    widths = np.array([c["rect"][2] for c in row], dtype=np.float32)
+    heights = np.array([c["rect"][3] for c in row], dtype=np.float32)
+
+    med_w = float(np.median(widths))
+    med_h = float(np.median(heights))
+
+    filtered = []
+    for c in row:
+        x, y, w, h = c["rect"]
+
+        if w < 0.55 * med_w or h < 0.55 * med_h:
+            continue
+
+        if w > 1.45 * med_w or h > 1.45 * med_h:
+            continue
+
+        filtered.append(c)
+
+    return filtered
+
+
+def digit_blob_score(binary_img, rect):
+    x, y, w, h = rect
+
+    pad_x = max(2, int(0.12 * w))
+    pad_y = max(2, int(0.12 * h))
+
+    x0 = x + pad_x
+    y0 = y + pad_y
+    x1 = x + w - pad_x
+    y1 = y + h - pad_y
+
+    if x1 <= x0 or y1 <= y0:
+        return 0.0
+
+    roi = binary_img[y0:y1, x0:x1]
+    if roi.size == 0:
+        return 0.0
+
+    num_labels, labels, stats, _ = cv.connectedComponentsWithStats(
+        (roi > 0).astype(np.uint8), connectivity=8
+    )
+
+    areas = []
+    H, W = roi.shape[:2]
+    roi_area = H * W
+
+    for i in range(1, num_labels):
+        area = stats[i, cv.CC_STAT_AREA]
+        if area >= 0.01 * roi_area:
+            areas.append(area)
+
+    if len(areas) == 0:
+        return 0.0
+
+    largest = max(areas) / float(roi_area)
+    count_penalty = abs(len(areas) - 1)
+
+    return largest - 0.12 * count_penalty
+
+
+def filter_digit_like_boxes(binary_img, row):
+    out = []
+    for c in row:
+        blob = digit_blob_score(binary_img, c["rect"])
+        c["digit_blob_score"] = blob
+
+        if blob < 0.02:
+            continue
+
+        out.append(c)
+    return out
+
+
+def build_regular_dni_grid_from_row(row, expected_slots=9):
+    if len(row) < 4:
+        return None
+
+    row = sorted(row, key=lambda c: c["rect"][0])
+
+    widths = np.array([c["rect"][2] for c in row], dtype=np.float32)
+    heights = np.array([c["rect"][3] for c in row], dtype=np.float32)
+    centers_x = np.array([c["rect"][0] + c["rect"][2] / 2.0 for c in row], dtype=np.float32)
+    centers_y = np.array([c["rect"][1] + c["rect"][3] / 2.0 for c in row], dtype=np.float32)
+
+    med_w = float(np.median(widths))
+    med_h = float(np.median(heights))
+    med_cy = float(np.median(centers_y))
+
+    if len(centers_x) >= 2:
+        diffs = np.diff(np.sort(centers_x))
+        diffs = diffs[diffs > 0]
+        if len(diffs) == 0:
+            pitch = med_w * 1.05
+        else:
+            pitch = float(np.median(diffs))
+    else:
+        pitch = med_w * 1.05
+
+    start_cx = float(np.min(centers_x))
+
+    slots = []
+    for i in range(expected_slots):
+        cx = start_cx + i * pitch
+        x0 = int(round(cx - med_w / 2.0))
+        y0 = int(round(med_cy - med_h / 2.0))
+        x1 = int(round(cx + med_w / 2.0))
+        y1 = int(round(med_cy + med_h / 2.0))
+        slots.append((x0, y0, x1, y1))
+
+    return {
+        "slots": slots,
+        "med_w": med_w,
+        "med_h": med_h,
+        "pitch": pitch,
+        "cy": med_cy,
+    }
+
+
+def assign_candidates_to_grid_slots(row, grid):
+    assigned = [None] * len(grid["slots"])
+    used = set()
+
+    for slot_idx, slot in enumerate(grid["slots"]):
+        sx0, sy0, sx1, sy1 = slot
+        scx = (sx0 + sx1) / 2.0
+        scy = (sy0 + sy1) / 2.0
+        sw = sx1 - sx0
+        sh = sy1 - sy0
+
+        best = None
+        best_cost = 1e9
+        best_idx = None
+
+        for idx, cand in enumerate(row):
+            if idx in used:
+                continue
+
+            x, y, w, h = cand["rect"]
+            ccx = x + w / 2.0
+            ccy = y + h / 2.0
+
+            dx = abs(ccx - scx) / max(sw, 1)
+            dy = abs(ccy - scy) / max(sh, 1)
+            dw = abs(w - sw) / max(sw, 1)
+            dh = abs(h - sh) / max(sh, 1)
+
+            cost = dx + dy + 0.6 * dw + 0.6 * dh
+
+            if cost < best_cost:
+                best_cost = cost
+                best = cand
+                best_idx = idx
+
+        if best is not None and best_cost < 1.35:
+            assigned[slot_idx] = best["rect"]
+            used.add(best_idx)
+
+    return assigned
+
+
+def fill_missing_slots_from_grid(assigned_slots, grid):
+    final_boxes = []
+    for idx, rect in enumerate(assigned_slots):
+        if rect is None:
+            final_boxes.append(grid["slots"][idx])
+        else:
+            x, y, w, h = rect
+            final_boxes.append((x, y, x + w, y + h))
+    return final_boxes
+
+
+def synthetic_anchor_from_first_digit(first_digit_box):
+    x0, y0, x1, y1 = first_digit_box
+    w = x1 - x0
+    gap = max(4, int(0.08 * w))
+    return (x0 - gap - w, y0, x0 - gap, y1)
 
 
 def score_9_digit_window(window):
@@ -870,6 +1051,63 @@ def find_anchor_left_of_digits(row, digit_window):
     anchor_y = fd_y
     return (anchor_x, anchor_y, anchor_w, anchor_h), True
 
+def regularize_digit_boxes_no_overlap(digit_rects_xyxy, force_touch=False):
+    """
+    Rend les 9 boxes régulières et interdit tout overlap.
+    On reconstruit la chaîne de gauche à droite.
+
+    force_touch=False  -> petite séparation estimée
+    force_touch=True   -> x0(i) = x1(i-1)
+    """
+    if not digit_rects_xyxy:
+        return digit_rects_xyxy
+
+    rects = []
+    for r in digit_rects_xyxy:
+        x0, y0, x1, y1 = r
+        if x1 > x0 and y1 > y0:
+            rects.append((int(x0), int(y0), int(x1), int(y1)))
+
+    if len(rects) < 2:
+        return rects
+
+    rects = sorted(rects, key=lambda r: r[0])
+
+    widths = [x1 - x0 for x0, y0, x1, y1 in rects]
+    heights = [y1 - y0 for x0, y0, x1, y1 in rects]
+    y0s = [y0 for x0, y0, x1, y1 in rects]
+    y1s = [y1 for x0, y0, x1, y1 in rects]
+
+    med_w = int(round(np.median(widths)))
+    med_h = int(round(np.median(heights)))
+    med_y0 = int(round(np.median(y0s)))
+    med_y1 = med_y0 + med_h
+
+    # gap horizontal médian observé
+    gaps = []
+    for i in range(len(rects) - 1):
+        g = rects[i + 1][0] - rects[i][2]
+        if 0 <= g <= 0.35 * med_w:
+            gaps.append(g)
+
+    if force_touch:
+        med_gap = 0
+    else:
+        med_gap = int(round(np.median(gaps))) if gaps else 0
+        med_gap = max(0, min(med_gap, int(0.15 * med_w)))
+
+    # point de départ = première vraie box
+    start_x0 = rects[0][0]
+
+    out = []
+    x0 = start_x0
+    for _ in range(len(rects)):
+        x1 = x0 + med_w
+        out.append((int(x0), int(med_y0), int(x1), int(med_y1)))
+        x0 = x1 + med_gap
+
+    return out
+
 
 def detect_dni_chain_on_page(page_number, mode="coords_detect"):
     """
@@ -877,7 +1115,6 @@ def detect_dni_chain_on_page(page_number, mode="coords_detect"):
     - la boxe ancre
     - les 9 boxes du DNI à sa droite
     """
-
     global DNI_CHAIN_CACHE
 
     cache_key = (page_number, mode)
@@ -909,34 +1146,52 @@ def detect_dni_chain_on_page(page_number, mode="coords_detect"):
         if best_seq is None:
             continue
 
-        digit_rects = [w["rect"] for w in best_seq["window"]]
-        anchor_rect, synthetic_anchor = find_anchor_left_of_digits(best_seq["row"], best_seq["window"])
+        row = best_seq["row"]
 
-        seq_len = len(digit_rects)
+        # 1) nettoyage géométrique
+        row = filter_row_candidates_by_median_geometry(row)
+
+        # 2) garder seulement les boxes qui ressemblent à un caractère manuscrit
+        row = filter_digit_like_boxes(bw, row)
+
+        if len(row) < 4:
+            continue
+
+        # 3) grille régulière de 9 cases
+        grid = build_regular_dni_grid_from_row(row, expected_slots=9)
+        if grid is None:
+            continue
+
+        # 4) affectation des candidates à la grille
+        assigned = assign_candidates_to_grid_slots(row, grid)
+
+        # 5) complétion des cases manquantes
+        digit_rects_xyxy = fill_missing_slots_from_grid(assigned, grid)
+        seq_len = sum(1 for x in assigned if x is not None)
 
         if mode == "page_detect":
-            # pour page_detect on accepte dès 7 boxes cohérentes
             if seq_len < 7:
                 continue
-            accept_score = best_seq["score"] + (1.5 if not synthetic_anchor else -0.5)
+            accept_score = best_seq["score"]
         else:
-            # pour coords_detect on veut 8 ou 9
             if seq_len < 8:
                 continue
-            accept_score = best_seq["score"] + (2.0 if not synthetic_anchor else -1.0)
+            accept_score = best_seq["score"] + 1.0
+
+        anchor_rect_xyxy = synthetic_anchor_from_first_digit(digit_rects_xyxy[0])
 
         if accept_score > best_score:
             best_score = accept_score
             best_result = {
-                "anchor_rect_xywh": anchor_rect,
-                "anchor_rect_xyxy": rect_xywh_to_xyxy(anchor_rect),
-                "digit_rects_xywh": digit_rects[:9],
-                "digit_rects_xyxy": [rect_xywh_to_xyxy(r) for r in digit_rects[:9]],
+                "anchor_rect_xywh": rect_xyxy_to_xywh(anchor_rect_xyxy),
+                "anchor_rect_xyxy": anchor_rect_xyxy,
+                "digit_rects_xyxy": digit_rects_xyxy[:9],
+                "digit_rects_xywh": [rect_xyxy_to_xywh(r) for r in digit_rects_xyxy[:9]],
                 "gray_for_ocr": gray_inv,
                 "binary_debug": bw,
                 "score": accept_score,
                 "variant_name": variant_name,
-                "synthetic_anchor": synthetic_anchor,
+                "synthetic_anchor": True,
                 "seq_len": seq_len,
             }
 

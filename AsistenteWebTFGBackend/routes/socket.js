@@ -372,6 +372,16 @@ const connection = async (socket) => {
     let progressTotal = 0;
     let progress = 0;
 
+    function dniWithoutCheckLetter(value) {
+      const dni = String(value || '').trim().toUpperCase();
+
+      if (/^\d+[A-Z]$/.test(dni) || /^[XYZNP]\d+[A-Z]$/.test(dni)) {
+        return dni.slice(0, -1);
+      }
+
+      return dni;
+    }
+
     function writeZIP() {
 
       if (progress < progressTotal) {
@@ -422,8 +432,9 @@ const connection = async (socket) => {
       let csvPadrino = 'ID estudiente;Nota\n';
 
       calificados.forEach(c => {
-        csvInfo += `${c.dni};${c.apellidos};${c.nombre};${c.nota};${c.ini};${c.fin}\n`;
-        if (c.dni.length > 0) { csvPadrino += `${c.dni};${c.nota}\n`; }
+        const exportedDni = dniWithoutCheckLetter(c.dni);
+        csvInfo += `${exportedDni};${c.apellidos};${c.nombre};${c.nota};${c.ini};${c.fin}\n`;
+        if (exportedDni.length > 0) { csvPadrino += `${exportedDni};${c.nota}\n`; }
       });
       csvInfo = csvInfo.trim();
       csvPadrino = csvPadrino.trim();
@@ -441,7 +452,7 @@ const connection = async (socket) => {
 
     }
 
-    function writePDF(calificados) {
+    /*function writePDF(calificados) {
 
       let sinNombre = 0;
 
@@ -489,21 +500,73 @@ const connection = async (socket) => {
           progress++;
           writeZIP();
         }).catch(err => { console.error(err); });
-        */
+        *-/
       });
+    } */
+  function writePDF(calificados) {
+    let sinNombre = 0;
+
+    const userHomeDir = os.homedir();
+    const scanBat = path.join(userHomeDir, 'exam_scan', 'sube.bat');
+    const destBat = path.join(dirExamenes, 'sube.bat');
+
+    console.log('scanBat: %s destBat: %s', scanBat, destBat);
+
+    // Copier sube.bat seulement s'il existe
+    if (fs.existsSync(scanBat)) {
+      fs.copyFileSync(scanBat, destBat);
+    } else {
+      console.log('sube.bat absent, copie ignorée');
     }
 
-    let sql = 'SELECT * FROM calificados WHERE examen = ?';
-    db.query(sql, [idExam], (er, result, fields) => {
-      progressTotal = result.length + 1;
-      writeCSV(result);
-      writePDF(result);
+    calificados.forEach(c => {
+      let filename = '';
+      const exportedDni = dniWithoutCheckLetter(c.dni);
+
+      if (exportedDni.length > 0) {
+        let alumnoDNI = exportedDni;
+        let examenNombre = examen.nombre.replace(/ /g, '_');
+        let alumnoNombre = (
+          c.nombre.replace(/ /g, '_') +
+          '_' +
+          c.apellidos.replace(/ /g, '_')
+        )
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/\p{Diacritic}/gu, "");
+
+        filename = `${alumnoDNI}_${examenNombre}_${alumnoNombre}.pdf`;
+      } else {
+        filename = 'XXXXXXXXX_Sin_nombre_' + (++sinNombre) + '.pdf';
+      }
+
+      const writePath = path.join(dirExamenes, filename);
+      const readPath = path.join(dirPrivate, examen.nombre.replace(/ /g, '_') + '.pdf');
+      const pages = (c.ini == c.fin) ? `${c.ini}` : `${c.ini}-${c.fin}`;
+
+      try {
+        let command = `cpdf "${readPath}" ${pages} -o "${writePath}" > /dev/null`;
+        execSync(command);
+        progress++;
+        writeZIP();
+      } catch (err) {
+        console.error('Erreur writePDF/cpdf:', err.message);
+      }
     });
-  });
+  }
+
+      let sql = 'SELECT * FROM calificados WHERE examen = ?';
+      db.query(sql, [idExam], (er, result, fields) => {
+        progressTotal = result.length + 1;
+        writeCSV(result);
+        writePDF(result);
+      });
+    });
 
   //const command = "python3"
-  const command = "/home/ariouich/Bureau/valencia/Madrina/.venv/bin/python";
-  const pathToScript = path.join(__dirname, '..', 'CNN_HandWrittenRecognition', 'main.py');
+  const command = "../.venv/bin/python";
+  const pathToScript = path.join(__dirname, '..', '..', 'AsistenteWebTFGBackendAIModule', 'main.py');
+  const aiModuleUserDataRoot = path.join(__dirname, '..', USER_DATA);
   let childProcesses = {};
 
   socket.on('examen-predict', async (data) => {
@@ -529,7 +592,13 @@ const connection = async (socket) => {
     DAL.getAlumnosFromAsignatura(asignatura).then((result) => {
       let alumnosJson = JSON.stringify(result);
       let args = [pathToScript, index, asignaturaNom, alumnosJson]
-      const child = spawn(command, args)
+      const child = spawn(command, args, {
+        cwd: path.dirname(pathToScript),
+        env: {
+          ...process.env,
+          AI_MODULE_USER_DATA_ROOT: aiModuleUserDataRoot,
+        },
+      })
       //guardamos el proceso hijo
       childProcesses[index] = child;
 

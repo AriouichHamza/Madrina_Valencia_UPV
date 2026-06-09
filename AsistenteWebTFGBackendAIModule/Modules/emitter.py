@@ -1,6 +1,7 @@
-import sys
+from __future__ import annotations
 
-from student import Alumno
+import sys
+from Modules.student import Alumno
 
 
 """
