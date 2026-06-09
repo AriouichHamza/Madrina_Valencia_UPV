@@ -28,6 +28,7 @@ AsistenteWebTFGBackend/CNN_Handwriting_Recognition
 # Original folder
 OriginalVersion/
 AsistenteWebTFGBackend/user_data
+AsistenteWebTFGBackend/public
 
 #codex
 .codex
