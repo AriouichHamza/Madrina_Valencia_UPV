@@ -7,6 +7,7 @@ __pycache__/
 venv/
 env/
 
+
 # Jupyter
 .ipynb_checkpoints/
 
@@ -38,6 +39,7 @@ AsistenteWebTFGBackend/public
 *.png
 *.rar
 *.pdf
+*.zip
 OriginalVersion/
 .venv/
 __pycache__/
