@@ -1,6 +1,8 @@
 services:
 
-  # ── Base de données MySQL ──────────────────────────────────────────────────
+  # ── Base de données MySQL locale (désactivée si BDD externe) ──────────────
+  # Pour utiliser une BDD externe : commenter tout ce bloc "db" et adapter
+  # les variables DB_* du service backend ci-dessous.
   db:
     image: mysql:8.0
     container_name: madrina_db
@@ -28,16 +30,22 @@ services:
       db:
         condition: service_healthy
     environment:
+      # ── BDD locale Docker (défaut) ─────────────────────────────────────────
       DB_HOST: db
       DB_USER: root
       DB_PASSWORD: MargotDB_2024
       DB_NAME: db_roadtomatricula
       DB_PORT: 3306
+      # ── BDD externe : remplacer les valeurs ci-dessus par celles du serveur
+      # DB_HOST: mon-serveur.exemple.com   # IP ou nom de domaine
+      # DB_USER: mon_user
+      # DB_PASSWORD: mon_mot_de_passe
+      # DB_NAME: ma_base
+      # DB_PORT: 3306
       PORT: 3000
     ports:
       - "3000:3000"
     volumes:
-      # Données persistantes (uploads, PDFs traités)
       - backend_public:/app/AsistenteWebTFGBackend/public
       - backend_user_data:/app/AsistenteWebTFGBackend/user_data
 
