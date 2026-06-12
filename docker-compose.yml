@@ -1,0 +1,59 @@
+services:
+
+  # ── Base de données MySQL ──────────────────────────────────────────────────
+  db:
+    image: mysql:8.0
+    container_name: madrina_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: MargotDB_2024
+      MYSQL_DATABASE: db_roadtomatricula
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./MargotDB.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pMargotDB_2024"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Backend Node.js + Module IA Python ────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: madrina_backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_USER: root
+      DB_PASSWORD: MargotDB_2024
+      DB_NAME: db_roadtomatricula
+      DB_PORT: 3306
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    volumes:
+      # Données persistantes (uploads, PDFs traités)
+      - backend_public:/app/AsistenteWebTFGBackend/public
+      - backend_user_data:/app/AsistenteWebTFGBackend/user_data
+
+  # ── Frontend Angular (servi par Nginx) ────────────────────────────────────
+  frontend:
+    build:
+      context: ./AsistenteWebTFG
+      dockerfile: Dockerfile
+    container_name: madrina_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "4200:80"
+
+volumes:
+  db_data:
+  backend_public:
+  backend_user_data:

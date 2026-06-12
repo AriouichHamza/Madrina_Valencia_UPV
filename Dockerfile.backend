@@ -1,0 +1,55 @@
+# ── Backend Node.js + Module AI Python ───────────────────────────────────────
+#
+# Le backend (socket.js) lance le module Python via spawn() avec le chemin
+# relatif  "../.venv/bin/python"  et  "../../AsistenteWebTFGBackendAIModule/main.py".
+# On reproduit exactement cette structure dans /app/ :
+#
+#   /app/
+#     .venv/                          ← venv Python
+#     AsistenteWebTFGBackend/         ← serveur Express  (CWD au lancement)
+#     AsistenteWebTFGBackendAIModule/ ← module IA Python
+#
+FROM node:18-slim
+
+# ── Dépendances système ───────────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 \
+        python3-pip \
+        python3-venv \
+        python3-dev \
+        build-essential \
+        poppler-utils \
+        libgl1 \
+        libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# ── Venv Python + dépendances IA ─────────────────────────────────────────────
+RUN python3 -m venv /app/.venv
+
+# Torch CPU (plus léger ; remplacer par la version +cuXXX pour GPU NVIDIA)
+RUN /app/.venv/bin/pip install --no-cache-dir \
+        torch==2.1.0 torchvision==0.16.0 --index-url https://download.pytorch.org/whl/cpu
+
+RUN /app/.venv/bin/pip install --no-cache-dir \
+        PyPDF2==3.0.1 \
+        python-Levenshtein==0.27.3 \
+        numpy==2.4.3 \
+        opencv-python-headless \
+        Pillow
+
+# ── Code source du module IA ──────────────────────────────────────────────────
+COPY AsistenteWebTFGBackendAIModule/ /app/AsistenteWebTFGBackendAIModule/
+
+# ── Dépendances Node.js ───────────────────────────────────────────────────────
+WORKDIR /app/AsistenteWebTFGBackend
+COPY AsistenteWebTFGBackend/package*.json ./
+RUN npm ci --omit=dev
+
+# ── Code source du backend ────────────────────────────────────────────────────
+COPY AsistenteWebTFGBackend/ ./
+
+EXPOSE 3000
+
+CMD ["node", "./bin/www"]
