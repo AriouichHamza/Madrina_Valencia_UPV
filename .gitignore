@@ -33,6 +33,7 @@ AsistenteWebTFGBackend/public
 
 #codex
 .codex
+.claude
 *.png
 *.jpg
 *.jpeg

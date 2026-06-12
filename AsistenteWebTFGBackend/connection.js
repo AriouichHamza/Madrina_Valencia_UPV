@@ -21,7 +21,7 @@ const pool = mysql.createPool({
   database: 'MargotDB',
   waitForConnections: true
 });
-
+  
 pool.on('connection', (stream) => {
   console.log('open pool', new Date());
 })
