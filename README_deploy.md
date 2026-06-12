@@ -1,105 +1,105 @@
-# Déploiement — Madrina / AsistenteTFG
+# Deployment — Madrina / AsistenteTFG
 
-## Architecture globale
+## Architecture overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        Navigateur                               │
+│                          Browser                                │
 │              http://localhost:4200                               │
 └───────────────────────────┬─────────────────────────────────────┘
                             │ HTTP / WebSocket
                             ▼
 ┌───────────────────────────────────────────────────────────────┐
-│  Container : frontend  (Nginx :80 → exposé :4200)             │
-│  Angular 13 buildé en statique                                │
-│  • SPA routing géré par nginx (try_files → index.html)        │
-│  • /api/, /login/, /socket.io/ → proxy vers backend:3000      │
+│  Container: frontend  (Nginx :80 → exposed :4200)             │
+│  Angular 13 built as static files                             │
+│  • SPA routing handled by nginx (try_files → index.html)      │
+│  • /api/, /login/, /socket.io/ → proxied to backend:3000      │
 └───────────────────────────┬───────────────────────────────────┘
-                            │ HTTP / Socket.IO (réseau Docker)
+                            │ HTTP / Socket.IO (Docker network)
                             ▼
 ┌───────────────────────────────────────────────────────────────┐
-│  Container : backend  (Node.js 18 :3000 → exposé :3000)       │
+│  Container: backend  (Node.js 18 :3000 → exposed :3000)       │
 │  Express + Socket.IO                                          │
 │                                                               │
-│  Lors du traitement d'un examen :                             │
+│  When processing an exam:                                     │
 │    └─ spawn() → /app/.venv/bin/python main.py                 │
 │                                                               │
 │  ┌─────────────────────────────────────────────────────────┐  │
-│  │  Module IA Python (même container)                      │  │
+│  │  Python AI Module (same container)                      │  │
 │  │  PyTorch CPU · OpenCV · PyPDF2 · Levenshtein            │  │
-│  │  • détecte les DNI manuscrits (CNN SmallCNN)            │  │
-│  │  • détecte les notes (exam_model)                       │  │
-│  │  • émet les résultats ligne par ligne sur stdout        │  │
+│  │  • detects handwritten DNI digits (SmallCNN)            │  │
+│  │  • detects grades (exam_model)                          │  │
+│  │  • streams results line by line on stdout               │  │
 │  └─────────────────────────────────────────────────────────┘  │
 └───────────────────────────┬───────────────────────────────────┘
                             │ MySQL TCP :3306
                             ▼
 ┌───────────────────────────────────────────────────────────────┐
-│  Container : db  (MySQL 8.0 → exposé :3306)                   │
-│  Base : db_roadtomatricula                                    │
-│  Init automatique via MargotDB.sql au premier démarrage       │
-│  Données persistées dans le volume Docker  db_data            │
+│  Container: db  (MySQL 8.0)                                   │
+│  Database: db_roadtomatricula                                 │
+│  Auto-initialised from MargotDB.sql on first start            │
+│  Data persisted in Docker volume  db_data                     │
 └───────────────────────────────────────────────────────────────┘
 ```
 
-### Fichiers créés pour Docker
+### Docker files
 
-| Fichier | Rôle |
+| File | Role |
 |---|---|
-| `AsistenteWebTFG/Dockerfile` | Build Angular (Node 16) + serve Nginx |
-| `AsistenteWebTFG/nginx.conf` | Config Nginx : SPA + proxy API/Socket |
-| `Dockerfile.backend` | Backend Node + venv Python + module IA |
-| `docker-compose.yml` | Orchestre les 3 services + volumes |
+| `AsistenteWebTFG/Dockerfile` | Build Angular (Node 16) + serve with Nginx |
+| `AsistenteWebTFG/nginx.conf` | Nginx config: SPA routing + API/Socket proxy |
+| `Dockerfile.backend` | Node backend + Python venv + AI module |
+| `docker-compose.yml` | Orchestrates the 3 services + volumes |
 
 ---
 
-## Prérequis
+## Prerequisites
 
 - **Docker** ≥ 24 — `docker --version`
 - **Docker Compose plugin** — `docker compose version`
-  - Si absent : `curl -SL https://github.com/docker/compose/releases/download/v2.27.0/docker-compose-linux-x86_64 -o ~/.docker/cli-plugins/docker-compose && chmod +x ~/.docker/cli-plugins/docker-compose`
-- Ports **3000**, **4200**, **3306** libres sur la machine hôte
+  - If missing: `curl -SL https://github.com/docker/compose/releases/download/v2.27.0/docker-compose-linux-x86_64 -o ~/.docker/cli-plugins/docker-compose && chmod +x ~/.docker/cli-plugins/docker-compose`
+- Ports **3000**, **4200**, **3306** available on the host machine
 
 ---
 
-## Lancer l'application (Docker — recommandé)
+## Running with Docker (recommended)
 
-### Premier démarrage (build complet ~10 min)
+### First start (full build ~10 min)
 
 ```bash
 docker compose up --build
 ```
 
-> PyTorch CPU fait ~800 Mo. Le build du backend est long la première fois ;
-> Docker met tout en cache pour les lancements suivants.
+> PyTorch CPU is ~800 MB. The backend build is slow on first run;
+> Docker caches all layers for subsequent starts.
 
-### Démarrages suivants (rapide)
+### Subsequent starts (fast)
 
 ```bash
 docker compose up
 ```
 
-### En arrière-plan
+### Background mode
 
 ```bash
 docker compose up -d
-docker compose logs -f          # suivre les logs
+docker compose logs -f          # stream logs
 ```
 
-### Arrêter
+### Stop
 
 ```bash
-docker compose down             # arrête et supprime les conteneurs
-docker compose down -v          # + supprime les volumes (reset BDD)
+docker compose down             # stop and remove containers
+docker compose down -v          # + remove volumes (resets the database)
 ```
 
-### Vérifier que tout tourne
+### Check everything is running
 
 ```bash
 docker compose ps
 ```
 
-Résultat attendu :
+Expected output:
 
 ```
 NAME                STATUS          PORTS
@@ -108,29 +108,29 @@ madrina_backend     Up              0.0.0.0:3000->3000/tcp
 madrina_frontend    Up              0.0.0.0:4200->80/tcp
 ```
 
-**Accès :** `http://localhost:4200`
+**Access:** `http://localhost:4200`
 
 ---
 
-## Lancer sans Docker (développement local)
+## Running without Docker (local development)
 
-### 1. Base de données MySQL
+### 1. MySQL database
 
 ```bash
 mysql -u root -p < MargotDB.sql
 ```
 
-Configurer `.env` dans `AsistenteWebTFGBackend/` :
+Configure `.env` in `AsistenteWebTFGBackend/`:
 
 ```env
 DB_HOST=localhost
 DB_USER=root
-DB_PASSWORD=<ton_mot_de_passe>
+DB_PASSWORD=<your_password>
 DB_NAME=db_roadtomatricula
 DB_PORT=3306
 ```
 
-### 2. Backend Node.js
+### 2. Node.js backend
 
 ```bash
 cd AsistenteWebTFGBackend
@@ -139,20 +139,20 @@ node ./bin/www
 # → http://localhost:3000
 ```
 
-### 3. Module IA Python (venv)
+### 3. Python AI module (venv)
 
-Le module est lancé automatiquement par le backend via `spawn()`.
-Pour le préparer manuellement :
+The module is launched automatically by the backend via `spawn()`.
+To set it up manually:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install torch torchvision PyPDF2 python-Levenshtein numpy opencv-python Pillow
 ```
 
-> Le backend cherche `.venv` à `../` depuis `AsistenteWebTFGBackend/`,
-> donc placer le venv à la racine du projet.
+> The backend resolves `.venv` at `../` relative to `AsistenteWebTFGBackend/`,
+> so place the venv at the project root.
 
-### 4. Frontend Angular
+### 4. Angular frontend
 
 ```bash
 cd AsistenteWebTFG
@@ -161,36 +161,58 @@ npm start
 # → http://localhost:4200
 ```
 
-> `--legacy-peer-deps` est nécessaire à cause du conflit de peer deps
-> entre `ngx-socket-io ^4.1.0` et Angular 13 sous npm v8+.
+> `--legacy-peer-deps` is required due to a peer dependency conflict
+> between `ngx-socket-io ^4.1.0` and Angular 13 under npm v8+.
 
 ---
 
-## Variables d'environnement (backend)
+## Backend environment variables
 
-| Variable | Défaut Docker | Description |
+| Variable | Docker default | Description |
 |---|---|---|
-| `DB_HOST` | `db` | Hôte MySQL (nom du service Docker) |
-| `DB_USER` | `root` | Utilisateur MySQL |
-| `DB_PASSWORD` | `MargotDB_2024` | Mot de passe MySQL |
-| `DB_NAME` | `db_roadtomatricula` | Nom de la base |
-| `DB_PORT` | `3306` | Port MySQL |
-| `PORT` | `3000` | Port d'écoute Express |
+| `DB_HOST` | `db` | MySQL host (Docker service name) |
+| `DB_USER` | `root` | MySQL user |
+| `DB_PASSWORD` | `MargotDB_2024` | MySQL password |
+| `DB_NAME` | `db_roadtomatricula` | Database name |
+| `DB_PORT` | `3306` | MySQL port |
+| `PORT` | `3000` | Express listening port |
 
 ---
 
-## GPU (optionnel — NVIDIA)
+## Connecting to an external database
 
-Par défaut, le module IA tourne sur **CPU**. Pour activer le GPU :
+To use an existing remote MySQL server instead of the local Docker container:
 
-**1. Modifier `Dockerfile.backend`** — remplacer la ligne torch :
+**1.** Comment out the entire `db` block in `docker-compose.yml`.
+
+**2.** Update the backend environment variables:
+```yaml
+environment:
+  DB_HOST: my-server.example.com   # remote IP or domain
+  DB_USER: my_user
+  DB_PASSWORD: my_password
+  DB_NAME: my_database
+  DB_PORT: 3306
+```
+
+**3.** Remove the `depends_on` block from the backend service (no local `db` anymore).
+
+**4.** Make sure the remote MySQL server accepts connections from your machine (grant user from `%` or the specific IP, open port 3306 in the server firewall).
+
+---
+
+## GPU support (optional — NVIDIA)
+
+By default the AI module runs on **CPU**. To enable GPU:
+
+**1. Update `Dockerfile.backend`** — replace the torch install line:
 
 ```dockerfile
 RUN /app/.venv/bin/pip install torch==2.1.0 torchvision==0.16.0 \
     --index-url https://download.pytorch.org/whl/cu121
 ```
 
-**2. Ajouter dans `docker-compose.yml`** sous le service `backend` :
+**2. Add to `docker-compose.yml`** under the `backend` service:
 
 ```yaml
     deploy:
@@ -202,19 +224,19 @@ RUN /app/.venv/bin/pip install torch==2.1.0 torchvision==0.16.0 \
               capabilities: [gpu]
 ```
 
-**3.** Installer `nvidia-container-toolkit` sur l'hôte.
+**3.** Install `nvidia-container-toolkit` on the host machine.
 
 ---
 
-## Volumes persistants
+## Persistent volumes
 
-| Volume Docker | Contenu |
+| Docker volume | Contents |
 |---|---|
-| `db_data` | Données MySQL |
-| `backend_public` | Fichiers PDF/ZIP générés |
-| `backend_user_data` | PDFs uploadés par les utilisateurs |
+| `db_data` | MySQL data |
+| `backend_public` | Generated PDF/ZIP files |
+| `backend_user_data` | PDFs uploaded by users |
 
-Pour réinitialiser complètement (y compris la BDD) :
+To fully reset (including the database):
 
 ```bash
 docker compose down -v
@@ -223,11 +245,11 @@ docker compose up --build
 
 ---
 
-## Dépannage rapide
+## Troubleshooting
 
-| Problème | Cause probable | Solution |
+| Issue | Likely cause | Fix |
 |---|---|---|
-| `backend` redémarre en boucle | MySQL pas encore prêt | Attendre le healthcheck (`service_healthy`) |
-| `npm ci` échoue sur le frontend | Conflit peer deps ngx-socket-io | `--legacy-peer-deps` déjà appliqué dans le Dockerfile |
-| Port 3306 déjà utilisé | MySQL local qui tourne | `sudo systemctl stop mysql` ou changer le port dans compose |
-| Module IA introuvable | Chemin `.venv` incorrect | Vérifier que le venv est à `/app/.venv` dans le container |
+| `backend` keeps restarting | MySQL not ready yet | Wait for the healthcheck (`service_healthy`) |
+| `npm ci` fails on frontend | ngx-socket-io peer dep conflict | `--legacy-peer-deps` already applied in the Dockerfile |
+| Port 3306 already in use | Local MySQL running on host | `sudo systemctl stop mysql` or remove port mapping in compose |
+| AI module not found | Wrong `.venv` path | Ensure the venv is at `/app/.venv` inside the container |

@@ -1,8 +1,8 @@
 services:
 
-  # ── Base de données MySQL locale (désactivée si BDD externe) ──────────────
-  # Pour utiliser une BDD externe : commenter tout ce bloc "db" et adapter
-  # les variables DB_* du service backend ci-dessous.
+  # ── Local MySQL database (disable if using an external database) ───────────
+  # To use an external database: comment out this entire "db" block and update
+  # the DB_* variables in the backend service below.
   db:
     image: mysql:8.0
     container_name: madrina_db
@@ -19,7 +19,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── Backend Node.js + Module IA Python ────────────────────────────────────
+  # ── Node.js backend + Python AI module ────────────────────────────────────
   backend:
     build:
       context: .
@@ -30,17 +30,17 @@ services:
       db:
         condition: service_healthy
     environment:
-      # ── BDD locale Docker (défaut) ─────────────────────────────────────────
+      # ── Local Docker database (default) ────────────────────────────────────
       DB_HOST: db
       DB_USER: root
       DB_PASSWORD: MargotDB_2024
       DB_NAME: db_roadtomatricula
       DB_PORT: 3306
-      # ── BDD externe : remplacer les valeurs ci-dessus par celles du serveur
-      # DB_HOST: mon-serveur.exemple.com   # IP ou nom de domaine
-      # DB_USER: mon_user
-      # DB_PASSWORD: mon_mot_de_passe
-      # DB_NAME: ma_base
+      # ── External database: replace the values above with your server's
+      # DB_HOST: my-server.example.com   # IP or domain name
+      # DB_USER: my_user
+      # DB_PASSWORD: my_password
+      # DB_NAME: my_database
       # DB_PORT: 3306
       PORT: 3000
     ports:
@@ -49,7 +49,7 @@ services:
       - backend_public:/app/AsistenteWebTFGBackend/public
       - backend_user_data:/app/AsistenteWebTFGBackend/user_data
 
-  # ── Frontend Angular (servi par Nginx) ────────────────────────────────────
+  # ── Angular frontend (served by Nginx) ────────────────────────────────────
   frontend:
     build:
       context: ./AsistenteWebTFG
