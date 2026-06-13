@@ -106,7 +106,7 @@ pas au fonctionnement courant de l'application.
 - Socket.IO 4 ;
 - MySQL avec `mysql2` ;
 - génération d'archives avec `archiver` ;
-- traitement de PDF avec Poppler, Ghostscript et `cpdf` ;
+- traitement de PDF avec Poppler et Ghostscript ;
 - vues Pug pour les pages d'erreur.
 
 ### Module IA
@@ -136,9 +136,8 @@ L'environnement cible recommandé est Debian ou Ubuntu.
 - npm ;
 - Python 3 et le module `venv` ;
 - MySQL Server ;
-- Poppler : `pdftoppm` et `pdfunite` ;
+- Poppler : `pdftoppm`, `pdfseparate` et `pdfunite` ;
 - Ghostscript : `ps2pdf` ;
-- `cpdf` disponible dans le `PATH` ;
 - la commande `mail` et un MTA configuré si la récupération de mot de passe est utilisée ;
 - suffisamment d'espace disque pour les PDF, images JPEG temporaires et ZIP.
 
@@ -150,12 +149,9 @@ sudo apt install mysql-server python3 python3-venv python3-pip \
   poppler-utils ghostscript mailutils
 ```
 
-`cpdf` n'est généralement pas fourni par les dépôts système. Installer le
-binaire Coherent PDF adapté à la machine, puis vérifier :
-
 ```bash
-cpdf -version
 pdftoppm -v
+pdfseparate -v
 pdfunite -v
 ps2pdf -h
 ```
@@ -185,8 +181,8 @@ cd ..
 
 ### 3. Installer le module IA
 
-Le backend utilise actuellement le chemin relatif `../.venv/bin/python`.
-L'environnement virtuel doit donc être créé à la racine du projet :
+Par défaut, le backend cherche `../.venv/bin/python`. Ce chemin est configurable
+avec `AI_PYTHON_BIN`. L'environnement virtuel peut être créé à la racine :
 
 ```bash
 python3 -m venv .venv
@@ -239,18 +235,16 @@ DB_PORT=3306
 DB_PASSWORD=mot_de_passe_solide
 DB_NAME=MargotDB
 PORT=3000
+AI_PYTHON_BIN=../.venv/bin/python
+AI_MODULE_PATH=../AsistenteWebTFGBackendAIModule/main.py
+AI_MODULE_USER_DATA_ROOT=./user_data
+AI_PDF_WORKERS=4
+AI_DETECTION_WORKERS=4
 ```
 
-État actuel de `connection.js` :
-
-- `DB_HOST`, `DB_USER` et `DB_PASSWORD` sont utilisés ;
-- le port actif est forcé à `3306` ;
-- le nom de base actif est forcé à `MargotDB` ;
-- `DB_PORT` et `DB_NAME` existent dans la configuration commentée.
-
-Pour utiliser des valeurs différentes en production, réactiver la configuration
-basée entièrement sur les variables d'environnement dans
-`AsistenteWebTFGBackend/connection.js`.
+`connection.js` utilise `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_PORT`,
+`DB_NAME` et `DB_CONNECTION_LIMIT`. Les valeurs Docker sont définies dans
+`docker-compose.yml`.
 
 Le serveur écoute sur le port `3000` par défaut. La variable `PORT` permet de le
 modifier.
@@ -605,9 +599,21 @@ CI standard. Les scripts de préparation sous `data/` restent indépendants.
 
 ## Déploiement en production
 
-Le dépôt ne contient actuellement ni Dockerfile, ni Docker Compose, ni pipeline
-CI/CD. La procédure suivante utilise Nginx pour le frontend et le reverse proxy,
-et systemd pour maintenir le backend actif.
+Le déploiement recommandé utilise les Dockerfiles et `docker-compose.yml`
+présents à la racine. La procédure complète est décrite dans
+[`README_deploy.md`](README_deploy.md). Démarrage rapide :
+
+```bash
+docker compose up --build -d
+docker compose logs -f
+```
+
+Le frontend est disponible sur `http://localhost:4200`. Nginx relaie les API,
+Socket.IO, `/public/` et `/info/` vers le backend. Le module IA s'exécute dans
+le conteneur backend, comme processus Python enfant, et non comme service HTTP.
+
+La procédure suivante reste valable pour une installation sans Docker avec
+Nginx et systemd.
 
 ### 1. Préparer le serveur
 
@@ -620,7 +626,6 @@ sudo apt install nginx mysql-server python3-venv python3-pip \
 Installer également :
 
 - Node.js 16 et npm ;
-- `cpdf` dans un répertoire du `PATH` ;
 - un certificat TLS, par exemple avec Certbot ;
 - un MTA fonctionnel si l'envoi de courriels est requis.
 
@@ -817,33 +822,28 @@ dans MySQL.
 
 Avant une exposition publique, traiter au minimum les points suivants :
 
-1. `connection.js` force actuellement le port `3306` et la base `MargotDB`.
-2. Le chemin Python est codé en dur dans `routes/socket.js` :
-   `../.venv/bin/python`.
-3. L'URL de production du frontend est codée dans `environment.prod.ts`.
-4. Socket.IO et CORS acceptent actuellement une origine très large.
-5. La clé utilisée pour le hachage des comptes est codée dans `routes/login.js`.
-6. Le backend construit certaines commandes système à partir de données
+1. Socket.IO et CORS acceptent actuellement une origine très large.
+2. La clé utilisée pour le hachage des comptes est codée dans `routes/login.js`.
+3. Le backend construit certaines commandes système à partir de données
    applicatives ; les entrées et noms de fichiers doivent être strictement
    contrôlés.
-7. Le stockage des PDF et ZIP est local au serveur et n'a pas de mécanisme
+4. Le stockage des PDF et ZIP est local au serveur et n'a pas de mécanisme
    automatique de rétention.
-8. Il n'existe pas de fichier verrouillant les dépendances Python.
-9. Il n'existe pas de tests automatisés backend ni de test d'intégration global.
-10. L'événement `examen-predict-kill` est déclaré côté frontend, mais aucun
-    gestionnaire correspondant n'est actuellement visible dans le backend.
-11. Les outils d'entraînement/test IA sont couplés aux arguments du runtime.
-12. Les modèles doivent rester compatibles avec la version de PyTorch installée.
+5. Les dépendances Python Docker sont listées dans `requirements-docker.txt`,
+   mais leurs versions doivent être maintenues avec les modèles.
+6. Il n'existe pas de tests automatisés backend ni de test d'intégration global.
+7. Les outils d'entraînement/test IA sont couplés aux arguments du runtime.
+8. Les modèles doivent rester compatibles avec la version de PyTorch installée.
 
 Mesures recommandées :
 
-- déplacer les secrets et chemins dans des variables d'environnement ;
+- déplacer les secrets restants dans des variables d'environnement ;
 - limiter CORS au domaine du frontend ;
 - utiliser HTTPS uniquement ;
 - exécuter Node.js et MySQL avec des comptes non privilégiés ;
 - ajouter une validation stricte des fichiers importés ;
 - ajouter des migrations de base au lieu de rejouer le script destructif ;
-- créer un `requirements.txt` ou un fichier `pyproject.toml` verrouillé ;
+- verrouiller et auditer régulièrement `requirements-docker.txt` ;
 - ajouter des tests d'intégration sur l'import et le découpage PDF.
 
 ## Dépannage
@@ -884,9 +884,9 @@ sudo journalctl -u madrina-backend -f
 
 ```bash
 command -v pdftoppm
+command -v pdfseparate
 command -v pdfunite
 command -v ps2pdf
-command -v cpdf
 ```
 
 Vérifier également les droits d'écriture sur `user_data/` et l'espace disque.
@@ -900,16 +900,18 @@ test -f AsistenteWebTFGBackendAIModule/core/checkpoints/best_model.pt
 test -f AsistenteWebTFGBackendAIModule/core/checkpoints/exammodel4.pt
 ```
 
-Le nom du PDF transmis à l'IA doit correspondre exactement au fichier présent
-dans `user_data/<utilisateur>-<matiere>-<examen>/`.
+Vérifier aussi `AI_PYTHON_BIN`, `AI_MODULE_PATH` et
+`AI_MODULE_USER_DATA_ROOT`. Le backend résout le nom demandé et accepte le seul
+PDF du dossier lorsqu'il n'y en a qu'un.
 
 ### Les exports ZIP restent bloqués
 
-Le backend appelle `cpdf` pour extraire les pages de chaque copie. Vérifier que
-le binaire fonctionne sous le même utilisateur que le service :
+Le backend utilise `pdfseparate` et `pdfunite` pour extraire les pages de chaque
+copie. Vérifier que Poppler est disponible :
 
 ```bash
-sudo -u madrina cpdf -version
+pdfseparate -v
+pdfunite -v
 ```
 
 ### Les courriels de récupération ne partent pas

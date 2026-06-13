@@ -13,7 +13,10 @@ async function getAlumnosFromAsignatura(asignatura) {
   let args = [asignaturaInt];
   return new Promise((resolve, reject) => {
     conexionDB.query(sql, args, (er, result, fields) => {
-      if (er) throw reject(er);
+      if (er) {
+        reject(er);
+        return;
+      }
       resolve(result);
     });
   });
@@ -61,7 +64,10 @@ async function insertAlumnoCalificado(alumno, verificado){
   let args = [alumno.nombre, alumno.apellidos, alumno.dni, examen, ini,fin, nota, verficiadoInt];
   return new Promise((resolve, reject) => {
     conexionDB.query(sql, args, (er, result, fields) => {
-      if (er) console.log(er);
+      if (er) {
+        reject(er);
+        return;
+      }
       resolve(result);
     });
   });
@@ -77,7 +83,10 @@ async function setExamenIsPredicted(examenId, newValue ){
   
   return new Promise((resolve, reject) => {
     conexionDB.query(sql, args, (er, result, fields) => {
-      if (er) console.log(er);
+      if (er) {
+        reject(er);
+        return;
+      }
       resolve(result);
     });
   });

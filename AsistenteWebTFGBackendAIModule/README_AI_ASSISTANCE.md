@@ -76,7 +76,8 @@ Generated files such as `__pycache__/` and `utils/.img-dumps/` are not source fi
 
 ## Requirements
 
-No Python dependency lock file is currently provided in this directory. The runtime requires:
+Docker runtime dependencies are listed in the root `requirements-docker.txt`.
+The runtime requires:
 
 - Python 3;
 - Poppler's `pdftoppm` executable;
@@ -151,7 +152,13 @@ When the backend receives the `examen-predict` event, it:
 5. reads the child process output;
 6. inserts the emitted grades into the database when processing is complete.
 
-The Python interpreter path is currently configured directly in `routes/socket.js`. Update that path when the project is installed in another location or virtual environment.
+The backend connection is configured with:
+
+- `AI_PYTHON_BIN`: Python executable;
+- `AI_MODULE_PATH`: path to `main.py`;
+- `AI_MODULE_USER_DATA_ROOT`: uploaded PDF root;
+- `AI_PDF_WORKERS`: maximum concurrent Poppler jobs;
+- `AI_DETECTION_WORKERS`: maximum first-page detection processes.
 
 ## Manual Runtime Usage
 
@@ -188,6 +195,7 @@ core/checkpoints/exammodel4.pt
 progress <percentage> <state>
 new-calificado <student_json>
 done <elapsed_time>
+error <message>
 ```
 
 Example:
@@ -214,10 +222,15 @@ Importing `utils/constants.py` reads the three command-line arguments, extracts 
 
 ### 2. Convert PDF regions to images
 
-`utils/traitement/pdf_traitement.py` calls `pdftoppm` in parallel. It renders:
+`utils/traitement/pdf_traitement.py` calls `pdftoppm` with a bounded worker
+pool. It renders:
 
-- the page-header area where DNI boxes are expected;
-- the area where the handwritten grade is expected.
+- the page-header area for every page, to locate DNI boxes;
+- the grade area only for pages confirmed as the first page of a copy.
+
+This avoids rendering a second image for every PDF page. `AI_PDF_WORKERS`
+controls concurrency, which prevents large PDFs from starting too many Poppler
+processes at once.
 
 The generated images are stored temporarily in:
 

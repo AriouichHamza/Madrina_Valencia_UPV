@@ -66,8 +66,9 @@ def compute_coords_from_main_block(j, coordsDNI, ListNumFirstPage):
 
 def split_in_num_cpu(nbp):
     # Distribute page numbers across CPU buckets to parallelize first-page detection.
-    cores = os.cpu_count() or 1
-    result = [[] for _ in range(cores)]
+    configured_workers = int(os.environ.get("AI_DETECTION_WORKERS", "4"))
+    workers = max(1, min(configured_workers, nbp))
+    result = [[] for _ in range(workers)]
     for i in range(1, nbp + 1):
-        result[i % cores].append(i)
+        result[(i - 1) % workers].append(i)
     return result

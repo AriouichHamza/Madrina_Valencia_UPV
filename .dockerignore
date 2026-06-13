@@ -1,0 +1,23 @@
+.git
+.agents
+.codex
+.venv
+OriginalVersion
+
+# The frontend has its own Docker build context.
+AsistenteWebTFG
+
+# Backend dependencies and runtime volumes are created inside Docker.
+AsistenteWebTFGBackend/node_modules
+AsistenteWebTFGBackend/public
+AsistenteWebTFGBackend/user_data
+AsistenteWebTFGBackend/.env
+
+# Runtime AI does not need raw training archives or generated caches.
+AsistenteWebTFGBackendAIModule/.git
+AsistenteWebTFGBackendAIModule/data/zipfiles
+AsistenteWebTFGBackendAIModule/**/__pycache__
+AsistenteWebTFGBackendAIModule/utils/.img-dumps
+
+*.pyc
+*.pyo

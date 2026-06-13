@@ -14,7 +14,12 @@ import torch
 import PyPDF2
 import Levenshtein
 
-from utils.traitement.pdf_traitement import set_page_num_width, safe_crop_digit, run_pdf_preprocessing
+from utils.traitement.pdf_traitement import (
+    run_grade_preprocessing,
+    run_pdf_preprocessing,
+    safe_crop_digit,
+    set_page_num_width,
+)
 from utils.constants import device, trained_model_path, exam_model_path, output_folder, alumnos, inputPDF , asignatura_ID, examen_ID
 from utils.utils import choose_device, load_model, load_exam_model, display_label, detec_calification, preprocess_image
 from utils.traitement.dni_processing import clean_identifier, build_expected_identifier
@@ -31,9 +36,18 @@ emitter = Emitter()
 MATCH_RATIO_THRESHOLD = 0.4
 
 
-# Create the temporary dump folder used to store page crops and intermediate images.
-if not os.path.exists(output_folder):
-    os.makedirs(output_folder)
+def validate_runtime():
+    required_files = (
+        ("input PDF", inputPDF),
+        ("DNI model", trained_model_path),
+        ("grade model", exam_model_path),
+    )
+    missing = [f"{label}: {file_path}" for label, file_path in required_files if not os.path.isfile(file_path)]
+    if missing:
+        raise FileNotFoundError("Missing runtime file(s): " + "; ".join(missing))
+
+    if not isinstance(alumnos, list):
+        raise ValueError("The student roster must be a JSON array")
 
 
 
@@ -104,6 +118,9 @@ def main():
     # 4. match the OCR result against the known student list,
     # 5. read the handwritten grade and emit the result.
     
+    validate_runtime()
+    os.makedirs(output_folder, exist_ok=True)
+
     numErrorsGlobal = 0
     Output = []
     L=[]
@@ -125,9 +142,9 @@ def main():
     
     pathToImg = ""
     
-    pdfFileObj = open(inputPDF, 'rb')
-    pdfReader = PyPDF2.PdfReader(pdfFileObj)
-    nbp = len(pdfReader.pages)
+    with open(inputPDF, 'rb') as pdfFileObj:
+        pdfReader = PyPDF2.PdfReader(pdfFileObj)
+        nbp = len(pdfReader.pages)
     set_page_num_width(nbp)
     run_pdf_preprocessing(nbp)
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -136,7 +153,7 @@ def main():
     
     pagesLists = split_in_num_cpu(nbp)
     
-    with ProcessPoolExecutor() as executor:
+    with ProcessPoolExecutor(max_workers=len(pagesLists)) as executor:
         
         futures = []
         for pages in pagesLists:
@@ -153,6 +170,9 @@ def main():
     ListNumFirstPage = [page for page, coords in confirmed_pages]
     coordsDNI = [coords for page, coords in confirmed_pages]
     nbStudent = len(ListNumFirstPage)
+    if nbStudent == 0:
+        raise RuntimeError("No exam copy first page was detected in the PDF")
+    run_grade_preprocessing(ListNumFirstPage)
     
     for j in range(1, nbStudent+1):
         Line = None
@@ -271,7 +291,16 @@ def main():
                 emitter.emit_student(Alumno(asignatura_ID, examen_ID, "Err"+str(numErrorsGlobal),"Err"+str(numErrorsGlobal), "Err"+str(numErrorsGlobal), ListNumFirstPage[j-1], fin_pag, calificacion))
         
 if __name__ == "__main__":
-    main()
-    emitter.emit_done(datetime.now() - initial_time)
-    # Remove the temporary working directory created for intermediate images.
-    shutil.rmtree(output_folder)
+    exit_code = 0
+    try:
+        main()
+        emitter.emit_done(datetime.now() - initial_time)
+    except Exception as exc:
+        exit_code = 1
+        print(f"AI pipeline failed: {exc}", file=sys.stderr, flush=True)
+        traceback.print_exc(file=sys.stderr)
+        emitter.emit_error(exc)
+    finally:
+        shutil.rmtree(output_folder, ignore_errors=True)
+
+    raise SystemExit(exit_code)

@@ -9,7 +9,7 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: MargotDB_2024
-      MYSQL_DATABASE: db_roadtomatricula
+      MYSQL_DATABASE: MargotDB
     volumes:
       - db_data:/var/lib/mysql
       - ./MargotDB.sql:/docker-entrypoint-initdb.d/init.sql:ro
@@ -34,7 +34,7 @@ services:
       DB_HOST: db
       DB_USER: root
       DB_PASSWORD: MargotDB_2024
-      DB_NAME: db_roadtomatricula
+      DB_NAME: MargotDB
       DB_PORT: 3306
       # ── External database: replace the values above with your server's
       # DB_HOST: my-server.example.com   # IP or domain name
@@ -43,6 +43,14 @@ services:
       # DB_NAME: my_database
       # DB_PORT: 3306
       PORT: 3000
+      AI_PYTHON_BIN: /app/.venv/bin/python
+      AI_MODULE_PATH: /app/AsistenteWebTFGBackendAIModule/main.py
+      AI_MODULE_USER_DATA_ROOT: /app/AsistenteWebTFGBackend/user_data
+      AI_PDF_WORKERS: 2
+      AI_DETECTION_WORKERS: 2
+      OMP_NUM_THREADS: 1
+      MKL_NUM_THREADS: 1
+      PYTHONUNBUFFERED: 1
     ports:
       - "3000:3000"
     volumes:

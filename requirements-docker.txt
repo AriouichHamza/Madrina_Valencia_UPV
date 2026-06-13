@@ -1,0 +1,7 @@
+# Runtime dependencies for AsistenteWebTFGBackendAIModule.
+# torch/torchvision are installed separately via the PyTorch CPU wheel index.
+PyPDF2==3.0.1
+python-Levenshtein==0.27.3
+numpy==2.4.3
+opencv-python-headless==4.13.0.92
+Pillow==12.1.1

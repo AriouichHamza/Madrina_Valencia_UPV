@@ -36,7 +36,7 @@
                             ▼
 ┌───────────────────────────────────────────────────────────────┐
 │  Container: db  (MySQL 8.0)                                   │
-│  Database: db_roadtomatricula                                 │
+│  Database: MargotDB                                           │
 │  Auto-initialised from MargotDB.sql on first start            │
 │  Data persisted in Docker volume  db_data                     │
 └───────────────────────────────────────────────────────────────┘
@@ -126,8 +126,11 @@ Configure `.env` in `AsistenteWebTFGBackend/`:
 DB_HOST=localhost
 DB_USER=root
 DB_PASSWORD=<your_password>
-DB_NAME=db_roadtomatricula
+DB_NAME=MargotDB
 DB_PORT=3306
+AI_PYTHON_BIN=../.venv/bin/python
+AI_MODULE_PATH=../AsistenteWebTFGBackendAIModule/main.py
+AI_MODULE_USER_DATA_ROOT=./user_data
 ```
 
 ### 2. Node.js backend
@@ -149,8 +152,8 @@ python3 -m venv .venv
 .venv/bin/pip install torch torchvision PyPDF2 python-Levenshtein numpy opencv-python Pillow
 ```
 
-> The backend resolves `.venv` at `../` relative to `AsistenteWebTFGBackend/`,
-> so place the venv at the project root.
+> These paths can be changed with `AI_PYTHON_BIN`, `AI_MODULE_PATH` and
+> `AI_MODULE_USER_DATA_ROOT`.
 
 ### 4. Angular frontend
 
@@ -173,9 +176,14 @@ npm start
 | `DB_HOST` | `db` | MySQL host (Docker service name) |
 | `DB_USER` | `root` | MySQL user |
 | `DB_PASSWORD` | `MargotDB_2024` | MySQL password |
-| `DB_NAME` | `db_roadtomatricula` | Database name |
+| `DB_NAME` | `MargotDB` | Database name |
 | `DB_PORT` | `3306` | MySQL port |
 | `PORT` | `3000` | Express listening port |
+| `AI_PYTHON_BIN` | `/app/.venv/bin/python` | Python executable used by Node.js |
+| `AI_MODULE_PATH` | `/app/AsistenteWebTFGBackendAIModule/main.py` | AI entry point |
+| `AI_MODULE_USER_DATA_ROOT` | `/app/AsistenteWebTFGBackend/user_data` | Uploaded PDF root |
+| `AI_PDF_WORKERS` | `2` | Concurrent Poppler rendering jobs |
+| `AI_DETECTION_WORKERS` | `2` | Concurrent first-page detection jobs |
 
 ---
 
@@ -208,8 +216,8 @@ By default the AI module runs on **CPU**. To enable GPU:
 **1. Update `Dockerfile.backend`** — replace the torch install line:
 
 ```dockerfile
-RUN /app/.venv/bin/pip install torch==2.1.0 torchvision==0.16.0 \
-    --index-url https://download.pytorch.org/whl/cu121
+RUN /app/.venv/bin/pip install torch==2.11.0 torchvision==0.26.0 \
+    --extra-index-url https://download.pytorch.org/whl/cu126
 ```
 
 **2. Add to `docker-compose.yml`** under the `backend` service:
@@ -252,4 +260,27 @@ docker compose up --build
 | `backend` keeps restarting | MySQL not ready yet | Wait for the healthcheck (`service_healthy`) |
 | `npm ci` fails on frontend | ngx-socket-io peer dep conflict | `--legacy-peer-deps` already applied in the Dockerfile |
 | Port 3306 already in use | Local MySQL running on host | `sudo systemctl stop mysql` or remove port mapping in compose |
-| AI module not found | Wrong `.venv` path | Ensure the venv is at `/app/.venv` inside the container |
+| AI module not found | Invalid AI path variables | Check `AI_PYTHON_BIN`, `AI_MODULE_PATH` and `AI_MODULE_USER_DATA_ROOT` |
+| AI stops without results | No first page detected or invalid PDF | Read `docker compose logs backend`; the Python error is forwarded to the UI |
+| MySQL reports `Unable to lock ./ibdata1 error: 11` | An old `mysqld` process still owns the volume, often after mixing Snap Docker and system Docker | Keep only one Docker installation active, stop the orphan process, then restart only the `db` service |
+
+Do not run the Snap and system installations of Docker at the same time. Check
+the active data root with:
+
+```bash
+docker info --format '{{.DockerRootDir}}'
+ps -ef | grep '[d]ockerd'
+```
+
+If the data root starts with `/var/snap/docker/`, keep the Snap service and
+disable the duplicate system daemon:
+
+```bash
+sudo systemctl stop docker.service docker.socket
+sudo systemctl disable docker.service docker.socket
+sudo systemctl mask docker.service docker.socket
+sudo snap restart docker
+```
+
+Never delete `ibdata1` and do not use `docker compose down -v` to solve a lock;
+both actions can destroy the persisted database.
