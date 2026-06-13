@@ -1,14 +1,14 @@
 """
-Entraînement CNN plus robuste pour les images réelles.
+Train a robust CNN for handwriting recognition.
 
-Objectif :
-- entraîner sur selected_dataset/images
-- sauvegarder un checkpoint séparé
-- utiliser augmentation réaliste : rotation, translation, zoom, blur, low-resolution, inversion aléatoire
-- utiliser WeightedRandomSampler pour équilibrer les classes
-- utiliser weight_decay, scheduler et early stopping
+Features:
+- train on selected_dataset/images
+- save a separate best-model checkpoint
+- realistic augmentation: rotation, translation, zoom, blur, low-resolution, random inversion
+- WeightedRandomSampler for class balancing
+- weight_decay, ReduceLROnPlateau scheduler, and early stopping
 
-Exemple :
+Example:
   python train.py \
     --dataset_root selected_dataset0/images \
     --checkpoint_dir checkpoints_selected_new0 \
@@ -39,7 +39,7 @@ from utils.utils import choose_device, make_weighted_sampler, evaluate, write_hi
 #Utils Functions
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train CNN robuste pour handwriting.")
+    parser = argparse.ArgumentParser(description="Train a robust CNN for handwriting recognition.")
     parser.add_argument("--dataset_root", type=Path, default=Path("selected_dataset/images"))
     parser.add_argument("--checkpoint_dir", type=Path, default=Path("checkpoints_selected"))
     parser.add_argument("--epochs", type=int, default=100)
@@ -193,7 +193,7 @@ def main() -> None:
         )
 
         if epochs_without_improvement >= args.patience:
-            print(f"Early stopping: pas d'amélioration depuis {args.patience} epochs.")
+            print(f"Early stopping: no improvement for {args.patience} epochs.")
             break
 
     checkpoint = torch.load(best_model_path, map_location=device)

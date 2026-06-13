@@ -1,7 +1,7 @@
 """
-Générer labels.csv pour un dataset au format ImageFolder.
+Generate labels.csv for an ImageFolder-format dataset.
 
-Cas typique :
+Typical layout:
   selected_dataset/
     images/
       train/
@@ -12,7 +12,7 @@ Cas typique :
       test/
     selected_classes.json
 
-Commande :
+Usage:
   python generate_labels_csv_from_imagefolder.py --dataset_dir selected_dataset
 """
 
@@ -41,19 +41,19 @@ def parse_args():
         "--dataset_dir",
         type=Path,
         default=Path("selected_dataset"),
-        help="Racine du dataset contenant images/train, images/val, images/test.",
+        help="Dataset root directory containing images/train, images/val, images/test.",
     )
     parser.add_argument(
         "--images_subdir",
         type=str,
         default="images",
-        help="Sous-dossier contenant train/val/test.",
+        help="Sub-directory containing train/val/test splits.",
     )
     parser.add_argument(
         "--output_csv",
         type=Path,
         default=None,
-        help="Chemin de sortie. Par défaut: dataset_dir/labels.csv",
+        help="Output CSV path. Default: dataset_dir/labels.csv",
     )
     parser.add_argument(
         "--splits",
@@ -71,9 +71,9 @@ def main():
     output_csv = args.output_csv.expanduser().resolve() if args.output_csv else dataset_dir / "labels.csv"
 
     if not images_dir.exists():
-        raise FileNotFoundError(f"Dossier images introuvable: {images_dir}")
+        raise FileNotFoundError(f"Images directory not found: {images_dir}")
 
-    # Ordre des classes : on utilise selected_classes.json si disponible.
+    # Class order: use selected_classes.json if available.
     selected_classes_path = dataset_dir / "selected_classes.json"
     if selected_classes_path.exists():
         labels_order = json.loads(selected_classes_path.read_text(encoding="utf-8"))
@@ -96,7 +96,7 @@ def main():
     for split in args.splits:
         split_dir = images_dir / split
         if not split_dir.exists():
-            print(f"[WARN] Split absent: {split_dir}")
+            print(f"[WARN] Split not found: {split_dir}")
             continue
 
         for class_dir in sorted(split_dir.iterdir()):
@@ -134,9 +134,9 @@ def main():
         writer.writeheader()
         writer.writerows(rows)
 
-    print(f"labels.csv créé: {output_csv}")
-    print(f"Nombre d'images: {len(rows)}")
-    print(f"Nombre de classes: {len(label_to_id)}")
+    print(f"labels.csv created: {output_csv}")
+    print(f"Number of images: {len(rows)}")
+    print(f"Number of classes: {len(label_to_id)}")
 
     counts_by_split = {}
     for row in rows:

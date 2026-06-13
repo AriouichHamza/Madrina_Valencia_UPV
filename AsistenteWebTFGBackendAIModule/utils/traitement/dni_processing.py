@@ -115,7 +115,7 @@ class DNIProcessor:
             dtype={"DNI": str}
         )
 
-        # Supprimer la dernière ligne si elle est vraiment invalide
+        # Drop the last row if it is a spurious footer added by the export tool.
         self.df.drop(self.df.index[-1], inplace=True)
 
         self.dictionary = {
@@ -129,55 +129,36 @@ class DNIProcessor:
         }
 
     # ============================================================
-    # Fonction de nettoyage
+    # Identifier normalisation
     # ============================================================
     def clean_identifier(self, value):
-        """
-        Nettoie un DNI/NIF :
-        - supprime les espaces
-        - supprime les tirets
-        - met en majuscule
-        """
+        """Normalizes a DNI/NIF: strips whitespace and dashes, converts to uppercase."""
 
         return clean_identifier(value)
 
     # ============================================================
-    # Détection DNI / NIF / ERASMUS
+    # DNI / NIF / ERASMUS detection
     # ============================================================
     def detect_nif(self, dni_nif):
-        """
-        Détecte si l'identifiant est :
-        - DNI
-        - NIF
-        - ERASMUS
-        """
+        """Returns 'DNI', 'NIF', or 'ERASMUS' for the given identifier."""
 
         return detect_identifier_type(dni_nif)
 
     # ============================================================
-    # Calcul de la lettre DNI
+    # DNI check-letter calculation
     # ============================================================
     def calculate_expected_letter(self, numeric_part):
-        """
-        Calcule la lettre attendue avec l'algorithme DNI :
-        reste = numeric_part % 23
-        lettre = table[reste]
-        """
+        """Returns the expected check letter using the DNI algorithm: table[numeric_part % 23]."""
 
         return calculate_expected_letter(numeric_part)
 
     # ============================================================
-    # Transformation de la première lettre NIF en chiffre
+    # NIF prefix letter to numeric value
     # ============================================================
     def transform_nif_first_letter_to_number(self, first_letter):
         """
-        Transforme la première lettre du NIF selon le dictionnaire :
-
-        X -> 0
-        Y -> 1
-        Z -> 2
-        N -> 3
-        P -> 4
+        Converts the NIF prefix letter to its numeric equivalent:
+        X -> 0, Y -> 1, Z -> 2, N -> 3, P -> 4
         """
 
         first_letter = first_letter.upper()
@@ -189,18 +170,15 @@ class DNIProcessor:
         return self.NIF_detection_dict["Valeur"][index]
 
     # ============================================================
-    # Extraction des parties du NIF
+    # NIF part extraction
     # ============================================================
     def extract_nif_parts(self, nif):
         """
-        Extrait :
-        - la première lettre
-        - la partie numérique
-        - la lettre finale si elle existe
+        Splits a NIF into (first_letter, numeric_part_str, check_letter_or_None).
 
-        Exemples :
-        X7470664B -> X, 7470664, B
-        X7470664  -> X, 7470664, None
+        Examples:
+          X7470664B -> X, 7470664, B
+          X7470664  -> X, 7470664, None
         """
 
         nif = self.clean_identifier(nif)
@@ -213,12 +191,12 @@ class DNIProcessor:
         if first_letter not in self.NIF_detection_dict["Lettre"]:
             raise ValueError("Invalid NIF first letter")
 
-        # Cas avec lettre finale : X7470664B
+        # NIF with check letter: X7470664B
         if nif[-1].isalpha():
             numeric_part_str = nif[1:-1]
             current_letter = nif[-1]
 
-        # Cas sans lettre finale : X7470664
+        # NIF without check letter: X7470664
         else:
             numeric_part_str = nif[1:]
             current_letter = None
@@ -229,21 +207,16 @@ class DNIProcessor:
         return first_letter, numeric_part_str, current_letter
 
     # ============================================================
-    # Calcul de la partie numérique du NIF selon ta formule
+    # NIF numeric part calculation
     # ============================================================
     def calculate_nif_numeric_part(self, nif):
         """
-        Calcule la partie numérique du NIF avec ta logique :
+        Computes the combined numeric part used for NIF check-letter calculation:
 
-        NIF = lettre_debut + partie_numérique + lettre_finale
+        NIF = prefix_letter + numeric_part + check_letter
+        X -> 0, Y -> 1, Z -> 2, N -> 3, P -> 4
 
-        X -> 0
-        Y -> 1
-        Z -> 2
-        N -> 3
-        P -> 4
-
-        Numeric_Part = valeur_lettre * 100000000 + partie_numérique
+        Numeric_Part = prefix_value * 10^len(numeric_part) + numeric_part
         """
 
         first_letter, numeric_part_str, current_letter = self.extract_nif_parts(nif)
@@ -255,20 +228,20 @@ class DNIProcessor:
         return numeric_part
 
     # ============================================================
-    # Traitement d'un DNI
+    # DNI processing
     # ============================================================
     def process_dni(self, dni):
         """
-        Traite un DNI avec ou sans lettre.
+        Validates and enriches a DNI (with or without check letter).
 
-        Exemples :
-        12345678Z
-        12345678
+        Examples:
+          12345678Z
+          12345678
         """
 
         dni = self.clean_identifier(dni)
 
-        # Cas DNI sans lettre : 12345678
+        # DNI without check letter: 12345678
         if dni.isdigit():
             numeric_part = int(dni)
             current_letter = None
@@ -276,7 +249,7 @@ class DNIProcessor:
             expected_id = dni + expected_letter
             is_valid = None
 
-        # Cas DNI avec lettre : 12345678Z
+        # DNI with check letter: 12345678Z
         elif dni[:-1].isdigit() and dni[-1].isalpha():
             numeric_part = int(dni[:-1])
             current_letter = dni[-1]
@@ -296,16 +269,15 @@ class DNIProcessor:
         }
 
     # ============================================================
-    # Traitement d'un NIF
+    # NIF processing
     # ============================================================
     def process_nif(self, nif):
         """
-        Traite un NIF avec ou sans lettre finale.
+        Validates and enriches a NIF (with or without check letter).
 
-        La logique utilisée est :
-
-        Numeric_Part = valeur_lettre_debut * 100000000 + partie_numérique
-        Expected_Letter = Lettre[Numeric_Part % 23]
+        Logic:
+          Numeric_Part = prefix_value * 10^len(numeric_part) + numeric_part
+          Expected_Letter = DNI_LETTERS[Numeric_Part % 23]
         """
 
         nif = self.clean_identifier(nif)
@@ -332,7 +304,7 @@ class DNIProcessor:
         }
 
     # ============================================================
-    # Filtrer les lignes DNI / NIF / ERASMUS
+    # Filter rows by DNI / NIF / ERASMUS type
     # ============================================================
     def find_rows_DNI_or_NIF(self, id_type: str):
         id_type = str(id_type).strip().upper()
@@ -345,15 +317,10 @@ class DNIProcessor:
         return self.df[ids == id_type]
 
     # ============================================================
-    # Algorithme pour DNI uniquement
+    # Check-letter algorithm for DNI rows only
     # ============================================================
     def get_the_alphabatic_caracters_algorithm(self):
-        """
-        Calcule la lettre attendue pour les DNI.
-
-        Retourne :
-        DNI, Numeric_Part, Expected_Letter
-        """
+        """Returns a DataFrame with (DNI, Numeric_Part, Expected_Letter) for all DNI rows."""
 
         results = []
 
@@ -378,17 +345,10 @@ class DNIProcessor:
         return pd.DataFrame(results)
 
     # ============================================================
-    # Algorithme pour NIF uniquement
+    # Check-letter algorithm for NIF rows only
     # ============================================================
     def get_the_alphabatic_caracters_algorithm_for_nif(self):
-        """
-        Calcule la lettre attendue pour les NIF.
-
-        Retourne uniquement :
-        - DNI : le NIF original
-        - Numeric_Part : la partie numérique calculée
-        - Expected_Letter : la lettre attendue selon le tableau DNI
-        """
+        """Returns a DataFrame with (DNI, Numeric_Part, Expected_Letter) for all NIF rows."""
 
         results = []
 
@@ -418,29 +378,15 @@ class DNIProcessor:
         return pd.DataFrame(results)[["DNI", "Numeric_Part", "Expected_Letter"]]
 
     # ============================================================
-    # Fonction principale
+    # Main processing entry point
     # ============================================================
     def dni_processing(self):
         """
-        Fonction principale de traitement.
+        Processes the full student CSV and returns an enriched DataFrame.
 
-        Elle utilise :
-        - detect_nif()
-        - process_dni()
-        - process_nif()
-        - calculate_expected_letter()
-        - calculate_nif_numeric_part()
-
-        Elle retourne le DataFrame original enrichi avec :
-        - Original_ID
-        - ID_Type
-        - Normalized_ID
-        - Numeric_Part
-        - Current_Letter
-        - Expected_Letter
-        - Expected_ID
-        - Is_Valid
-        - Error
+        Calls detect_nif(), process_dni(), process_nif(), etc. and adds columns:
+          Original_ID, ID_Type, Normalized_ID, Numeric_Part, Current_Letter,
+          Expected_Letter, Expected_ID, Is_Valid, Error
         """
 
         results = []
@@ -470,14 +416,14 @@ class DNIProcessor:
                 row_result["Normalized_ID"] = clean_id
 
                 # =========================
-                # CAS ERASMUS
+                # ERASMUS
                 # =========================
                 if id_type == "ERASMUS":
                     row_result["Expected_ID"] = clean_id
                     row_result["Is_Valid"] = None
 
                 # =========================
-                # CAS DNI
+                # DNI
                 # =========================
                 elif id_type == "DNI":
                     dni_result = self.process_dni(clean_id)
@@ -489,7 +435,7 @@ class DNIProcessor:
                     row_result["Is_Valid"] = dni_result["Is_Valid"]
 
                 # =========================
-                # CAS NIF
+                # NIF
                 # =========================
                 elif id_type == "NIF":
                     nif_result = self.process_nif(clean_id)

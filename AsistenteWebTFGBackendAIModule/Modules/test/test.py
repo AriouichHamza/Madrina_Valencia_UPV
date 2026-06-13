@@ -1,7 +1,7 @@
 """
-Évaluer un modèle CNN sur train/val/test et générer des métriques + figures.
+Evaluate a CNN model on train/val/test splits and generate metrics and figures.
 
-Exemple :
+Example:
   python test.py \
     --checkpoint checkpoints/best_model.pt \
     --dataset_root unified_dataset/images \
@@ -9,7 +9,7 @@ Exemple :
     --device cuda \
     --output_dir evaluation_val
 
-Sorties :
+Outputs:
   evaluation_val/
     metrics_summary.txt
     per_class_metrics.csv
@@ -40,8 +40,8 @@ from utils.utils import choose_device, display_label
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Évaluation du modèle handwriting CNN.")
-    parser.add_argument("--checkpoint", type=Path, required=True, help="Chemin vers checkpoints/best_model.pt")
+    parser = argparse.ArgumentParser(description="Evaluate the handwriting CNN model.")
+    parser.add_argument("--checkpoint", type=Path, required=True, help="Path to checkpoints/best_model.pt")
     parser.add_argument("--dataset_root", type=Path, default=Path("unified_dataset/images"))
     parser.add_argument("--split", choices=["train", "val", "test"], default="val")
     parser.add_argument("--output_dir", type=Path, default=Path("evaluation_results"))
@@ -60,7 +60,7 @@ def load_model(checkpoint_path: Path, device: torch.device, dataset_classes: Lis
         state_dict = checkpoint["model_state_dict"]
         classes = list(checkpoint.get("classes", dataset_classes))
     else:
-        # Cas où torch.save(model.state_dict(), path) a été utilisé.
+        # Fallback for checkpoints saved with torch.save(model.state_dict(), path) directly.
         state_dict = checkpoint
         classes = dataset_classes
 
@@ -85,10 +85,10 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if not split_dir.exists():
-        raise FileNotFoundError(f"Split introuvable : {split_dir}")
+        raise FileNotFoundError(f"Split directory not found: {split_dir}")
 
     if not checkpoint_path.exists():
-        raise FileNotFoundError(f"Checkpoint introuvable : {checkpoint_path}")
+        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
     transform = transforms.Compose([
         transforms.Grayscale(num_output_channels=1),
@@ -114,8 +114,8 @@ def main() -> None:
     model, checkpoint_classes = load_model(checkpoint_path, device, dataset.classes)
 
     if checkpoint_classes != dataset.classes:
-        print("[WARN] Les classes du checkpoint sont différentes des classes du dataset.")
-        print("       Le script continue, mais vérifie que l'ordre des classes est correct.")
+        print("[WARN] Checkpoint classes differ from dataset classes.")
+        print("       Continuing — verify that the class order is correct.")
 
     classes = checkpoint_classes
     num_classes = len(classes)
@@ -128,7 +128,7 @@ def main() -> None:
     total_loss = 0.0
     total_examples = 0
 
-    # dataset.samples garde le même ordre que le DataLoader si shuffle=False
+    # dataset.samples preserves the same order as the DataLoader when shuffle=False.
     all_paths = [Path(p) for p, _ in dataset.samples]
     path_cursor = 0
 
@@ -206,7 +206,7 @@ def main() -> None:
     classificationMetric.save_csv(output_dir / "predictions.csv", prediction_rows)
     classificationMetric.save_csv(output_dir / "per_class_metrics.csv", per_class_rows)
 
-    # Classes les plus faibles
+    # Lowest-performing classes.
     worst_rows = sorted(per_class_rows, key=lambda r: r["class_accuracy"])[:15]
     classificationMetric.save_csv(output_dir / "worst_classes.csv", worst_rows)
 
@@ -257,7 +257,7 @@ Worst classes:
 
     print()
     print(summary)
-    print("Fichiers générés dans :", output_dir)
+    print("Output files written to:", output_dir)
     print("- metrics_summary.txt")
     print("- per_class_metrics.csv")
     print("- predictions.csv")

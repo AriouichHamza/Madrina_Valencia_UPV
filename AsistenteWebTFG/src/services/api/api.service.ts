@@ -45,7 +45,7 @@ export class ApiService {
   calificadoEdit(calificado:any) {
     return this.sendPost('/calificado/update', calificado);
   }
-  //Nuevo Jefferson
+  // Added by Jefferson
   calificadoEditAutomatizado(calificado:any){
     return this.sendPost('/calificado/update-automatizado', calificado);
   }
@@ -77,7 +77,7 @@ export class ApiService {
   examenAlumnosGet(examen: any) {
     return this.sendPost('/examen/alumnos/select', examen);
   }
-  //Nuevo Jefferson
+  // Added by Jefferson
   examenAlumnosGetAutomatizado(examen:any){
     return this.sendPost('/examen/alumnos/select-automatizado', examen);
   }
@@ -89,7 +89,7 @@ export class ApiService {
   prefGet() {
     return this.sendPost('/preferencias/select');
   }
-  //Nuevo Jefferson
+  // Added by Jefferson
   getErrorStatistics(asignatura:any) {
     return this.sendPost('/prediction/statistics', asignatura);
   }

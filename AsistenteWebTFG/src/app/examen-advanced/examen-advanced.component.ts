@@ -38,7 +38,7 @@ export class ExamenAdvancedComponent implements OnInit, AfterContentChecked {
 
   @ViewChild('imgContainer') imgContainer!: ElementRef;
   @ViewChild(MatSort) sort!: MatSort;
-  //Para tabla y editar
+  // For the table and editing
   @ViewChild('examenCalificados') examenCalificados!: ElementRef;
   @ViewChild('examenCalificar') examenCalificar!: ElementRef;
   //@ViewChildren('tableRow') tableRows!: QueryList<ElementRef>;
@@ -81,7 +81,7 @@ export class ExamenAdvancedComponent implements OnInit, AfterContentChecked {
   // escolta: Subscription;
 
   /*
-  Nuevas variables auxiliares
+  New auxiliary variables
   */
   imgNextExamen: string = '';
   imgNextExamenHeight: number = 0;
@@ -161,7 +161,7 @@ export class ExamenAdvancedComponent implements OnInit, AfterContentChecked {
     calificado.nota = c.nota;
     return calificado;
   }
-  //Para editar calificados
+  // For editing graded records
   editCalificado(c: CalificadoAutomatizado) {
     this.edit = new AlumnoExamen();
     this.edit.id = c.id;
@@ -179,7 +179,7 @@ export class ExamenAdvancedComponent implements OnInit, AfterContentChecked {
     this.setPagIni(c.ini);
     this.setPagFin(c.fin);
     this.imgsPos = c.ini;
-    //guardamos el Row del que se ha hecho click
+    // Save the row that was clicked
 
     this.focusElements[0].focus();
     this.selectedElement = this.focusElements[0];
@@ -290,7 +290,7 @@ export class ExamenAdvancedComponent implements OnInit, AfterContentChecked {
       this.sendCalificado();
     }
   }
-  //Interceptar cualquier tecla pulsada
+  // Intercept any key press
   @HostListener('document:keydown', ['$event'])
   handleKeydown(event: KeyboardEvent) {
     //event.preventDefault();
@@ -339,7 +339,7 @@ export class ExamenAdvancedComponent implements OnInit, AfterContentChecked {
     event.preventDefault();
     console.log("Se ha pulsado una tecla sobre row")
     if (event.key === 'Tab') {
-      //Lo marcamos como verificado
+      // Mark it as verified
 
       //this.focusNextRow(row);
 
@@ -611,7 +611,7 @@ export class ExamenAdvancedComponent implements OnInit, AfterContentChecked {
 
         this.socketService.selectExamenImgs(paquete)
         this.getExamenAlumnosOnInit();
-        this.sortBy('ini');//Ordenamos por orden de paginas para más comodidad
+        this.sortBy('ini'); // Sort by page order for convenience
 
       }
     });
@@ -633,9 +633,9 @@ export class ExamenAdvancedComponent implements OnInit, AfterContentChecked {
     }
 
 
-    this.socketService.insertExamenPrediction(request);//Petición de prediccion de examen
+    this.socketService.insertExamenPrediction(request); // Request exam prediction
 
-    //Esperamos hasta obtener la prediccion
+    // Wait until we receive the prediction
     this.socketService.insertExamenPredictionProcesar().subscribe(res => {
 
       let splittedRes = res.split(' ')

@@ -76,8 +76,8 @@ def complete_identifier_for_matching(value):
     try:
         return build_expected_identifier(identifier)
     except Exception:
-        # DNI espagnol: si l'OCR a lu un chiffre a la place de la lettre finale,
-        # on reconstruit le DNI complet depuis les 8 premiers chiffres.
+        # Spanish DNI: if the OCR read a digit instead of the final check letter,
+        # reconstruct the full DNI from the first 8 digits.
         if identifier.isdigit() and len(identifier) >= 8:
             try:
                 return build_expected_identifier(identifier[:8])

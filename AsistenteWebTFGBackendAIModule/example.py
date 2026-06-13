@@ -1,20 +1,20 @@
 """
-Tester un modèle CNN entraîné sur le dataset unifié de caractères manuscrits.
+Run a trained CNN on handwritten character images.
 
-Exemple :
+Example:
   python example.py \
     --checkpoint checkpoints/best_model.pt \
     --images test_images/*.png \
     --device auto
 
-Le script applique le même preprocessing que unify_handwriting_datasets.py :
+Applies the same preprocessing pipeline as unify_handwriting_datasets.py:
   - grayscale
-  - inversion si fond noir
+  - invert if background is dark
   - autocontrast
-  - crop autour du caractère
-  - padding carré
-  - resize 64x64
-  - normalisation mean=0.5, std=0.5
+  - crop around the character
+  - square padding
+  - resize to 64x64
+  - normalize mean=0.5, std=0.5
 """
 
 from __future__ import annotations
@@ -30,22 +30,22 @@ from utils.utils import load_model, resolve_images, choose_device, save_csv, sav
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Tester un modèle CNN sur des images manuscrites.")
-    parser.add_argument("--checkpoint", type=Path, default=Path("checkpoints/best_model1.pt"), help="Chemin vers best_model.pt")
-    parser.add_argument("--images", nargs="+", required=True, help="Images ou patterns glob, exemple: test_images/*.png")
-    parser.add_argument("--device", choices=["auto", "cpu", "cuda", "gpu"], default="auto", help="auto, cpu, cuda/gpu")
-    parser.add_argument("--image_size", type=int, default=64, help="Taille d'image utilisée à l'entraînement")
-    parser.add_argument("--topk", type=int, default=3, help="Nombre de prédictions affichées")
-    parser.add_argument("--output_csv", type=Path, default=None, help="Optionnel: sauver les prédictions dans un CSV")
-    parser.add_argument("--save_preprocessed_dir", type=Path, default=None, help="Optionnel: sauver les images après preprocessing")
+    parser = argparse.ArgumentParser(description="Run a trained CNN on handwritten character images.")
+    parser.add_argument("--checkpoint", type=Path, default=Path("checkpoints/best_model1.pt"), help="Path to best_model.pt")
+    parser.add_argument("--images", nargs="+", required=True, help="Image paths or glob patterns, e.g. test_images/*.png")
+    parser.add_argument("--device", choices=["auto", "cpu", "cuda", "gpu"], default="auto", help="Device: auto, cpu, cuda, or gpu")
+    parser.add_argument("--image_size", type=int, default=64, help="Image size used during training")
+    parser.add_argument("--topk", type=int, default=3, help="Number of top predictions to display")
+    parser.add_argument("--output_csv", type=Path, default=None, help="Optional: save predictions to a CSV file")
+    parser.add_argument("--save_preprocessed_dir", type=Path, default=None, help="Optional: save preprocessed images to a directory")
     args = parser.parse_args()
 
     if not args.checkpoint.exists():
-        raise FileNotFoundError(f"Checkpoint introuvable: {args.checkpoint}")
+        raise FileNotFoundError(f"Checkpoint not found: {args.checkpoint}")
 
     image_paths = resolve_images(args.images)
     if not image_paths:
-        raise FileNotFoundError("Aucune image valide trouvée.")
+        raise FileNotFoundError("No valid images found.")
 
     device = choose_device(args.device)
     print(f"Using device: {device}")
@@ -56,11 +56,11 @@ def main():
 
     if args.output_csv is not None:
         save_csv(rows, args.output_csv)
-        print(f"CSV sauvegardé: {args.output_csv}")
+        print(f"CSV saved: {args.output_csv}")
 
     if args.save_preprocessed_dir is not None:
         save_preprocessed_images(image_paths, args.save_preprocessed_dir, args.image_size)
-        print(f"Images prétraitées sauvegardées dans: {args.save_preprocessed_dir}")
+        print(f"Preprocessed images saved to: {args.save_preprocessed_dir}")
 
 
 if __name__ == "__main__":

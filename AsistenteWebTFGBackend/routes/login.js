@@ -9,6 +9,8 @@ const { exec } = require("child_process");
 
 const MAIL_CONFIG = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'mail', 'config.json'), 'utf8'));
 const MAIL = fs.readFileSync(path.join(__dirname, '..', 'mail', 'mail.html'), 'utf8');
+// Hardcoded signing key used for password and email hashing.
+// Move to an environment variable before any public deployment.
 const SECRET_KEY = '>%+C|{JTblF(Xbn';
 
 function ok(data) {
@@ -19,14 +21,18 @@ function err(message) {
   return { ok: false, data: {}, message: message }
 }
 
+// Hashes a password using the user's own id as a per-user salt, so two users
+// with the same password produce different digests.
 function encryptPassword(id, password) {
   return CryptoJS.SHA3(id + SECRET_KEY + password, { outputLength: 256 }).toString();
 }
 
+// One-way hash of the email address so it is never stored in plain text.
 function encryptEmail(email) {
   return CryptoJS.SHA3(SECRET_KEY + email, { outputLength: 256 }).toString();
 }
 
+// Fills the reset-password email template with the user id, token, and domain.
 function getMailBody(id, token) {
   let body = MAIL;
   body = body.replaceAll('$userID$', id);
@@ -34,12 +40,13 @@ function getMailBody(id, token) {
   return body.replaceAll('$token$', token);
 }
 
+// Builds the shell command that sends an HTML email via the system mail utility.
 function sendMailCommand(cuerpo, asunto, destino) {
   return `echo "${cuerpo}" | mail -a "Content-type: text/html" -s "${asunto}" -r noreply@disca.upv.es ${destino}`;
 }
 
+// Generates a unique user id that does not already exist in the database.
 async function randomId() {
-
   let id = 0, rows = [];
   do {
     id = randomToken(24);
@@ -48,6 +55,7 @@ async function randomId() {
   return id;
 }
 
+// Returns a random alphanumeric string of the given length.
 function randomToken(max) {
   let length = max;
   let result = '';
@@ -59,6 +67,8 @@ function randomToken(max) {
   return result;
 }
 
+// POST /login/insert — creates a new user account.
+// Rejects duplicate usernames and email addresses before inserting.
 router.post('/insert', async (req, res) => {
 
   let usuario = req.body;
@@ -87,6 +97,7 @@ router.post('/insert', async (req, res) => {
       let nombre = usuario.nombre.toLowerCase();
       let password = encryptPassword(id, usuario.password);
 
+      // Create the default CSV preferences row alongside the new account.
       let perf = [id, false, 'utf8', ';']
       let sql2 = 'INSERT INTO preferencias (id, cabecera, encode, sep) VALUES (?, ?, ?, ?)';
       db.query(sql2, perf, (error, rows, fields) => { });
@@ -104,6 +115,7 @@ router.post('/insert', async (req, res) => {
   }
 });
 
+// POST /login/select — authenticates a user and returns a fresh session token.
 router.post('/select', async (req, res) => {
 
   let usuario = req.body;
@@ -124,6 +136,7 @@ router.post('/select', async (req, res) => {
   if (!rows) { res.send(err('Fallo al buscar el usuario en la base de datos')); return; }
   if (rows.length != 1) { res.send(err('Contraseña incorrecta')); return; }
 
+  // Generate a collision-free session token and persist it.
   let token = '';
   do {
     token = randomToken(64);
@@ -138,6 +151,7 @@ router.post('/select', async (req, res) => {
   res.send(ok(u));
 });
 
+// POST /login/delete — logs the user out by clearing the session token.
 router.post('/delete', (req, res) => {
 
   let usuario = req.body;
@@ -148,6 +162,8 @@ router.post('/delete', (req, res) => {
   res.send(ok('logout'));
 })
 
+// POST /login/correo/insert — initiates password recovery.
+// Creates a time-stamped token, stores it, then emails a reset link to the user.
 router.post('/correo/insert', async (req, res) => {
 
   let correo = req.body.correo;
@@ -162,6 +178,7 @@ router.post('/correo/insert', async (req, res) => {
 
   let usuarioID = rows[0].id;
 
+  // Delete any existing recovery token before issuing a new one.
   sql = 'DELETE FROM correo_validacion WHERE usuario = ?';
   args = [usuarioID];
   rows = await db.syncQuery(sql, args);
@@ -180,6 +197,7 @@ router.post('/correo/insert', async (req, res) => {
   });
 });
 
+// POST /login/correo/select — validates a password-reset token.
 router.post('/correo/select', (req, res) => {
 
   let usuario = req.body.usuario;
@@ -202,6 +220,8 @@ router.post('/correo/select', (req, res) => {
   });
 });
 
+// POST /login/password/update — sets a new password after token validation.
+// Deletes the recovery token on success so it cannot be reused.
 router.post('/password/update', async (req, res) => {
 
   let usuario = req.body.usuario;

@@ -1,16 +1,16 @@
 """
-Créer un dataset filtré avec seulement certains labels.
+Create a filtered dataset containing only the specified labels.
 
-Exemple :
+Example:
   python create_selected_labels_dataset.py \
     --input_dataset unified_dataset/images \
     --output_dataset selected_dataset/images \
     --labels 0 1 2 3 4 5 6 7 8 9 T R W A G M Y F P D X B N J Z S Q V H L C K E \
     --mode copy
 
-Le script accepte les noms de dossiers de type :
+Accepts ImageFolder-style folder names:
   000_0, 001_1, 036_A
-ou directement :
+as well as plain label names:
   0, 1, A, B, ...
 """
 
@@ -40,7 +40,7 @@ def display_label(folder_name: str) -> str:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Filtrer un dataset ImageFolder pour ne garder que certains labels."
+        description="Filter an ImageFolder dataset to keep only the specified labels."
     )
     parser.add_argument("--input_dataset", type=Path, default=Path("unified_dataset/images"))
     parser.add_argument("--output_dataset", type=Path, default=Path("selected_dataset/images"))
@@ -56,7 +56,7 @@ def find_matching_class_dirs(split_dir: Path, wanted_labels: List[str]) -> Dict[
     matches: Dict[str, Path] = {}
 
     if not split_dir.exists():
-        raise FileNotFoundError(f"Split introuvable : {split_dir}")
+        raise FileNotFoundError(f"Split not found: {split_dir}")
 
     for class_dir in sorted(split_dir.iterdir()):
         if not class_dir.is_dir():
@@ -67,8 +67,8 @@ def find_matching_class_dirs(split_dir: Path, wanted_labels: List[str]) -> Dict[
         if label in wanted_set:
             if label in matches:
                 raise RuntimeError(
-                    f"Deux dossiers correspondent au même label '{label}' dans {split_dir}: "
-                    f"{matches[label]} et {class_dir}"
+                    f"Two folders match the same label '{label}' in {split_dir}: "
+                    f"{matches[label]} and {class_dir}"
                 )
             matches[label] = class_dir
 
@@ -99,7 +99,7 @@ def copy_split(
 
     missing = [label for label in wanted_labels if label not in matches]
     if missing:
-        print(f"[WARN] Labels absents dans {input_split_dir}: {missing}")
+        print(f"[WARN] Missing labels in {input_split_dir}: {missing}")
 
     image_exts = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
 
@@ -145,16 +145,16 @@ def main() -> None:
 
     print("Input dataset :", input_dataset)
     print("Output dataset:", output_dataset)
-    print("Labels gardés :", wanted_labels)
-    print("Nombre de classes:", len(wanted_labels))
-    print("Mode:", args.mode)
+    print("Labels kept   :", wanted_labels)
+    print("Num classes   :", len(wanted_labels))
+    print("Mode          :", args.mode)
 
     if args.clean_output and output_dataset.exists():
-        print(f"Suppression de l'ancien output: {output_dataset}")
+        print(f"Removing existing output: {output_dataset}")
         shutil.rmtree(output_dataset)
 
     if not input_dataset.exists():
-        raise FileNotFoundError(f"Input dataset introuvable : {input_dataset}")
+        raise FileNotFoundError(f"Input dataset not found: {input_dataset}")
 
     train_dir = input_dataset / "train"
     train_matches = find_matching_class_dirs(train_dir, wanted_labels)
@@ -162,7 +162,7 @@ def main() -> None:
     missing_train = [label for label in wanted_labels if label not in train_matches]
     if missing_train:
         raise RuntimeError(
-            "Certains labels sont absents du train set : " + ", ".join(missing_train)
+            "Some labels are missing from the train split: " + ", ".join(missing_train)
         )
 
     global_class_names = {
@@ -176,7 +176,7 @@ def main() -> None:
         input_split_dir = input_dataset / split
         output_split_dir = output_dataset / split
 
-        print(f"\nTraitement split: {split}")
+        print(f"\nProcessing split: {split}")
         counts = copy_split(
             input_split_dir=input_split_dir,
             output_split_dir=output_split_dir,
@@ -208,11 +208,11 @@ def main() -> None:
     classes_path = output_dataset.parent / "selected_classes.json"
     classes_path.write_text(json.dumps(wanted_labels, indent=2, ensure_ascii=False), encoding="utf-8")
 
-    print("\nDataset filtré créé avec succès.")
-    print("Images:", output_dataset)
-    print("Metadata:", metadata_path)
-    print("Classes:", classes_path)
-    print("\nPour entraîner :")
+    print("\nFiltered dataset created successfully.")
+    print("Images   :", output_dataset)
+    print("Metadata :", metadata_path)
+    print("Classes  :", classes_path)
+    print("\nTo train:")
     print(f"  python train_cnn_with_metrics.py --dataset_root {output_dataset} --epochs 100 --device cuda")
 
 

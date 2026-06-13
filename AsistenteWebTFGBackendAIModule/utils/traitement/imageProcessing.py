@@ -101,10 +101,7 @@ def rotate_image_keep_bounds(image, angle_deg):
     return cv.warpAffine(image, M, (new_w, new_h), flags=cv.INTER_LINEAR, borderValue=0)
 
 def light_deskew(gray_inv):
-    """
-    Petit redressement léger.
-    On reste volontairement simple pour ne pas casser ta logique.
-    """
+    """Light deskew pass. Kept intentionally simple to avoid disrupting the main detection logic."""
     bw = cv.threshold(gray_inv, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU)[1]
     coords = np.column_stack(np.where(bw > 0))
 
@@ -123,10 +120,7 @@ def light_deskew(gray_inv):
     return rotate_image_keep_bounds(gray_inv, angle)
 
 def preprocess_dni_page_multi(path_to_img):
-    """
-    Retourne plusieurs variantes binaires de la meme page
-    pour augmenter le recall des premieres pages.
-    """
+    """Returns multiple binary variants of the same page to improve first-page recall."""
     img = cv.imread(path_to_img, cv.IMREAD_COLOR)
     if img is None:
         return []
@@ -151,7 +145,7 @@ def preprocess_dni_page_multi(path_to_img):
     )
     variants.append((gray_inv, bw1, "adaptive_close"))
 
-    # 2) adaptive + petite dilation pour recoller les bords cassés
+    # 2) adaptive + small dilation to reconnect broken borders
     bw2 = cv.adaptiveThreshold(
         blur, 255,
         cv.ADAPTIVE_THRESH_GAUSSIAN_C,
@@ -180,7 +174,7 @@ def preprocess_dni_page_multi(path_to_img):
     )
     variants.append((gray_inv, bw3, "otsu_close"))
 
-    # 4) canny + fermeture plus forte
+    # 4) canny + stronger closing
     edges = cv.Canny(gray_inv, 35, 110)
     bw4 = cv.morphologyEx(
         edges, cv.MORPH_CLOSE,
@@ -193,10 +187,10 @@ def preprocess_dni_page_multi(path_to_img):
 
 def box_metrics(binary_img, rect):
     """
-    Mesures pour accepter / rejeter une case :
-    - border_fill_ratio : bords bien présents
-    - inner_fill_ratio  : contenu interne non vide
-    - corner_fill_ratio : les 4 coins existent bien
+    Computes accept/reject metrics for a candidate box:
+    - border_fill_ratio: borders are sufficiently filled
+    - inner_fill_ratio:  interior is not completely empty
+    - corner_fill_ratio: all four corners are present
     """
     x, y, w, h = rect
     H, W = binary_img.shape[:2]
@@ -233,11 +227,11 @@ def box_metrics(binary_img, rect):
 
 def detect_box_candidates(binary_img, recall_mode=False):
     """
-    Détecte des cases candidates :
-    - contour fermé
-    - approxPolyDP avec 4 coins
-    - dimensions cohérentes
-    - bord et coins suffisamment remplis
+    Detects box candidates from the binary image:
+    - closed contour
+    - approxPolyDP with 4 corners
+    - consistent dimensions
+    - border and corners sufficiently filled
     """
     contours, _ = cv.findContours(binary_img, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
     H, W = binary_img.shape[:2]
@@ -252,7 +246,7 @@ def detect_box_candidates(binary_img, recall_mode=False):
         peri = cv.arcLength(cnt, True)
         approx = cv.approxPolyDP(cnt, 0.03 * peri, True)
 
-        # en recall mode, on accepte aussi 5 coins si la bounding box est bonne
+        # in recall mode also accept 5-corner approximations if the bounding box looks right
         if len(approx) not in (4, 5):
             continue
 
@@ -304,9 +298,7 @@ def detect_box_candidates(binary_img, recall_mode=False):
     return filtered
 
 def cluster_boxes_by_row(candidates):
-    """
-    Groupe les boxes par ligne horizontale.
-    """
+    """Groups candidate boxes into horizontal rows."""
     rows = []
     for cand in sorted(candidates, key=lambda d: rect_center(d["rect"])[1]):
         cy = rect_center(cand["rect"])[1]
@@ -328,10 +320,7 @@ def cluster_boxes_by_row(candidates):
 
 
 def score_9_digit_window(window):
-    """
-    Score d'une suite de 8 ou 9 cases DNI.
-    Plus la suite est régulière, plus le score est élevé.
-    """
+    """Scores an 8-or-9 box DNI sequence; higher score means more regular spacing and sizes."""
     n = len(window)
     if n < 2:
         return -1e9
@@ -360,24 +349,21 @@ def score_9_digit_window(window):
         np.std(gaps) / (max(np.mean(np.abs(gaps)), 1.0))
     )
 
-    # Bonus si on a 9 boxes complètes
+    # Bonus for a complete 9-box chain.
     length_bonus = 4.0 if n == 9 else 0.0
 
     return mean_score * 10.0 - 8.0 * reg_pen + length_bonus
 
 
 def find_best_9_digit_sequence(rows):
-    """
-    Cherche la meilleure suite de 9 boxes.
-    Si 9 n'est pas possible, accepte une suite de 8 en fallback.
-    """
+    """Searches for the best 9-box sequence; falls back to 8 boxes if a full sequence is unavailable."""
     best = None
     best_score = -1e9
 
     for row in rows:
         row_len = len(row)
 
-        # priorité aux fenêtres de 9
+        # prefer windows of 9
         if row_len >= 9:
             for start in range(0, row_len - 9 + 1):
                 window = row[start:start + 9]
@@ -392,7 +378,7 @@ def find_best_9_digit_sequence(rows):
                         "score": score,
                     }
 
-        # fallback : fenêtres de 8 seulement si pas assez de 9
+        # fallback: accept 8-box windows when a 9-box window is not available
         elif row_len == 8:
             window = row[:8]
             score = score_9_digit_window(window)
@@ -410,10 +396,7 @@ def find_best_9_digit_sequence(rows):
 
 
 def find_anchor_left_of_digits(row, digit_window):
-    """
-    Cherche une ancre a gauche des digits, sans chevauchement.
-    Si elle manque, on la reconstruit.
-    """
+    """Finds an anchor box strictly to the left of the digit sequence; synthesizes one if absent."""
     first_digit = digit_window[0]["rect"]
     fd_x, fd_y, fd_w, fd_h = first_digit
     fd_cy = rect_center(first_digit)[1]
@@ -425,7 +408,7 @@ def find_anchor_left_of_digits(row, digit_window):
         cy = rect_center(r)[1]
         gap = fd_x - (x + w)
 
-        # strictement a gauche, sans overlap
+        # must be strictly to the left with no overlap
         if gap < 2:
             continue
 
@@ -438,7 +421,7 @@ def find_anchor_left_of_digits(row, digit_window):
         if not (0.60 <= h / float(fd_h) <= 1.50):
             continue
 
-        # l'ancre doit etre la plus proche a gauche
+        # prefer the closest candidate to the left
         score = -abs(gap - 4) + 2.0 * cand["metrics"]["border"]
         left_candidates.append((score, cand))
 
@@ -446,7 +429,7 @@ def find_anchor_left_of_digits(row, digit_window):
         left_candidates.sort(key=lambda x: x[0], reverse=True)
         return left_candidates[0][1]["rect"], False
 
-    # fallback : ancre synthetique
+    # fallback: synthesize a dummy anchor
     synth_gap = max(4, int(0.08 * fd_w))
     anchor_w = fd_w
     anchor_h = fd_h
@@ -456,11 +439,7 @@ def find_anchor_left_of_digits(row, digit_window):
 
 
 def detect_dni_chain_on_page(page_number, mode="coords_detect"):
-    """
-    Détecte :
-    - la boxe ancre
-    - les 9 boxes du DNI à sa droite
-    """
+    """Detects the anchor box and the 9 DNI digit boxes to its right on the given page."""
 
     global DNI_CHAIN_CACHE
 
@@ -499,12 +478,12 @@ def detect_dni_chain_on_page(page_number, mode="coords_detect"):
         seq_len = len(digit_rects)
 
         if mode == "page_detect":
-            # pour page_detect on accepte dès 7 boxes cohérentes
+            # page_detect: accept from 7 consistent boxes for higher recall
             if seq_len < 7:
                 continue
             accept_score = best_seq["score"] + (1.5 if not synthetic_anchor else -0.5)
         else:
-            # pour coords_detect on veut 8 ou 9
+            # coords_detect: require 8 or 9 boxes for reliable coordinates
             if seq_len < 8:
                 continue
             accept_score = best_seq["score"] + (2.0 if not synthetic_anchor else -1.0)
@@ -528,9 +507,7 @@ def detect_dni_chain_on_page(page_number, mode="coords_detect"):
     return best_result
 
 def compatible_next_box(prev_rect, next_rect):
-    """
-    Contraintes entre deux cases successives.
-    """
+    """Returns (ok, cost) for two consecutive boxes: ok if they satisfy adjacency and size constraints."""
     px, py, pw, ph = prev_rect
     nx, ny, nw, nh = next_rect
 
@@ -539,23 +516,23 @@ def compatible_next_box(prev_rect, next_rect):
 
     gap = nx - (px + pw)   # distance horizontale entre les deux cases
 
-    # même ligne
+    # must be on the same horizontal line
     if abs(ncy - pcy) > 0.35 * max(ph, nh):
         return False, None
 
-    # tailles proches
+    # similar size
     if not (0.65 <= nw / float(pw) <= 1.45):
         return False, None
     if not (0.65 <= nh / float(ph) <= 1.45):
         return False, None
 
-    # position "à côté"
+    # must be adjacent (not overlapping and not too far)
     if gap < -0.20 * pw:
         return False, None
     if gap > 1.00 * pw:
         return False, None
 
-    # score de voisinage : plus petit = meilleur
+    # neighbourhood cost: lower is better
     y_pen = abs(ncy - pcy) / max(ph, nh)
     w_pen = abs(nw - pw) / max(pw, 1)
     h_pen = abs(nh - ph) / max(ph, 1)
@@ -566,10 +543,7 @@ def compatible_next_box(prev_rect, next_rect):
     return True, chain_cost
 
 def build_chain_from_seed(candidates, seed_idx, target_len=10):
-    """
-    Construit une chaîne horizontale de boxes :
-    ancre + 9 boxes du DNI.
-    """
+    """Builds a horizontal chain of boxes (anchor + 9 DNI boxes) starting from a seed candidate."""
     used = {seed_idx}
     chain = [candidates[seed_idx]]
 
@@ -589,7 +563,7 @@ def build_chain_from_seed(candidates, seed_idx, target_len=10):
             if not ok:
                 continue
 
-            # bonus si la box ressemble bien à une vraie case
+            # bonus for a box that looks like a real cell
             cost = cost - 0.25 * cand["score"]
 
             if cost < best_cost:

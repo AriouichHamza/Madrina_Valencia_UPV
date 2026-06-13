@@ -1,12 +1,14 @@
 const conexionDB = require('./connection');
 const validator = require('validator');
 
+// Strip SQL-dangerous characters and escape single quotes for safe interpolation.
 function sanitizeString(str){
   str = str.replace(/[|\\]/g, '');
   str = str.replace(/'/g, "''");
   return validator.escape(str);
-
 }
+
+// Returns all students enrolled in the given subject.
 async function getAlumnosFromAsignatura(asignatura) {
   let sql = 'SELECT * FROM alumnos WHERE asignatura = ?';
   let asignaturaInt = validator.toInt(asignatura+ "");
@@ -20,24 +22,25 @@ async function getAlumnosFromAsignatura(asignatura) {
       resolve(result);
     });
   });
-
 }
+
+// Returns all graded entries for an exam, sorted by start page ascending.
 async function getCalificadosOrderByIni(examen) {
   let sql = 'SELECT * FROM calificados WHERE examen = ? ORDER BY ini';
   let examenInt = validator.toInt(examen+ "");
   let args = [examenInt];
   return new Promise((resolve, reject) => {
     conexionDB.query(sql, args, (er, result, fields) => {
-      
       if (er){
-        console.log("Err en consulta",er);
+        console.log("Query error", er);
         reject(er);
       }
-
       resolve(result);
     });
   });
 }
+
+// Returns students from a subject who have no graded entry in a given exam.
 async function getAlumnosNoCalificados(asignatura, examen){
   let sql = 'SELECT * FROM alumnos WHERE asignatura = ? AND dni NOT IN (SELECT dni FROM calificados WHERE examen = ?)';
   let asignaturaInt = validator.toInt(asignatura+ "");
@@ -53,6 +56,7 @@ async function getAlumnosNoCalificados(asignatura, examen){
   });
 }
 
+// Inserts a graded copy into calificados. The verified flag is set by the caller.
 async function insertAlumnoCalificado(alumno, verificado){
   let examen = parseInt(alumno.examen+ "");
   let ini = validator.toInt(alumno.ini+ "");
@@ -71,16 +75,16 @@ async function insertAlumnoCalificado(alumno, verificado){
       resolve(result);
     });
   });
-
 }
-async function setExamenIsPredicted(examenId, newValue ){
 
+// Updates the exam's predicted flag in the database.
+async function setExamenIsPredicted(examenId, newValue ){
   let examenIdInt = validator.toInt(examenId+ "");
   let newValueInt = newValue ? 1 : 0;
   let args = [newValueInt, examenIdInt];
 
   let sql = 'UPDATE examenes SET predicted = ? WHERE id = ?';
-  
+
   return new Promise((resolve, reject) => {
     conexionDB.query(sql, args, (er, result, fields) => {
       if (er) {
@@ -90,8 +94,10 @@ async function setExamenIsPredicted(examenId, newValue ){
       resolve(result);
     });
   });
-
 }
+
+// Updates a graded entry after manual correction.
+// A manual update is always considered verified (verificado = 1).
 async function updateCalificadoAutomatizado(calificado){
   let ini = validator.toInt(calificado.ini+ "");
   let fin = validator.toInt(calificado.fin+ "");
@@ -101,7 +107,6 @@ async function updateCalificadoAutomatizado(calificado){
   let nombre = sanitizeString(calificado.nombre);
   let apellidos = sanitizeString(calificado.apellidos);
   let args = [nombre, apellidos,dni, ini, fin, nota, id];
-  //se asume que un update es hecho por una persona, luego es siempre verificado
   let sql = 'UPDATE calificados SET nombre = ?, apellidos = ?,dni = ?,  ini = ?, fin = ?, nota = ?, verificado = 1 WHERE id = ?';
 
   return new Promise((resolve, reject) => {
@@ -111,7 +116,8 @@ async function updateCalificadoAutomatizado(calificado){
     });
   });
 }
-module.exports = { 
+
+module.exports = {
   getAlumnosFromAsignatura,
   insertAlumnoCalificado,
   setExamenIsPredicted,

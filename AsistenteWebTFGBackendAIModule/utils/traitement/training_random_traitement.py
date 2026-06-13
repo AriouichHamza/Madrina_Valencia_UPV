@@ -17,10 +17,7 @@ class RandomInvertPIL:
 
 
 class RandomLowResolution:
-    """
-    Simule les images réelles de type 28x28, puis les remet en 64x64.
-    Ça aide le modèle à mieux généraliser sur les images pixelisées.
-    """
+    """Downsamples to a random small resolution then scales back up, simulating pixelated real-world images."""
     def __init__(self, p: float = 0.50, min_size: int = 24, max_size: int = 40, final_size: int = 64):
         self.p = p
         self.min_size = min_size
@@ -40,10 +37,8 @@ class RandomLowResolution:
 
 class RandomStrokeFilter:
     """
-    Épaissit ou affine légèrement les traits.
-    Pour fond blanc + caractère noir :
-      MinFilter épaissit le noir
-      MaxFilter affine le noir
+    Randomly thickens or thins character strokes using a min/max morphological filter.
+    For white-background images: MinFilter thickens dark strokes, MaxFilter thins them.
     """
     def __init__(self, p: float = 0.20):
         self.p = p
@@ -60,7 +55,7 @@ class RandomStrokeFilter:
   
   
   
-# Ces transformations sont utilisées dans train_cnn_domain_robust.py et train_cnn_with_metrics.py  
+# Used by train_cnn_domain_robust.py and train_cnn_with_metrics.py.
 def build_transforms(image_size: int, augment_real_like: bool):
     if augment_real_like:
         train_transform = transforms.Compose([

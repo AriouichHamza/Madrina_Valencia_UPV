@@ -30,7 +30,7 @@ server.listen(port, () => {
   console.log('##################');
   console.log('####  SERVER  ####');
   console.log('##################');
-  console.log('Encendido', new Date());
+  console.log('Started', new Date());
   console.log('');
 });
 server.on('error', onError);

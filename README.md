@@ -1,153 +1,150 @@
 # Madrina
 
-Madrina est une application web destinée aux enseignants pour importer, découper,
-identifier, noter et redistribuer des copies d'examen numérisées.
+Madrina is a web application for teachers to import, split, identify, grade, and redistribute scanned exam copies.
 
-L'application permet notamment de :
+The application allows you to:
 
-- gérer des utilisateurs, des matières, des étudiants et des examens ;
-- importer un PDF contenant plusieurs copies ;
-- convertir le PDF en images pour une vérification manuelle ;
-- détecter automatiquement le début de chaque copie ;
-- reconnaître le DNI/NIF manuscrit et la note avec deux modèles CNN ;
-- associer chaque copie à un étudiant ;
-- corriger ou valider les résultats ;
-- générer un ZIP contenant les copies individuelles et les fichiers CSV de notes.
+- manage users, subjects, students, and exams
+- import a PDF containing multiple exam copies
+- convert the PDF to images for manual verification
+- automatically detect the start of each copy
+- recognise the handwritten DNI/NIF and grade using two CNN models
+- associate each copy with a student
+- correct or validate the results
+- generate a ZIP containing the individual copies and CSV grade files
 
-## Sommaire
+## Table of Contents
 
 - [Architecture](#architecture)
-- [Structure du dépôt](#structure-du-dépôt)
+- [Repository Structure](#repository-structure)
 - [Technologies](#technologies)
-- [Prérequis](#prérequis)
-- [Installation locale](#installation-locale)
+- [Prerequisites](#prerequisites)
+- [Local Installation](#local-installation)
 - [Configuration](#configuration)
-- [Lancement](#lancement)
-- [Fonctionnement des modules](#fonctionnement-des-modules)
-- [Base de données](#base-de-données)
-- [API et WebSocket](#api-et-websocket)
-- [Tests et vérifications](#tests-et-vérifications)
-- [Déploiement en production](#déploiement-en-production)
-- [Données persistantes et sauvegardes](#données-persistantes-et-sauvegardes)
-- [Limitations et points de vigilance](#limitations-et-points-de-vigilance)
-- [Dépannage](#dépannage)
+- [Running the App](#running-the-app)
+- [Module Overview](#module-overview)
+- [Database](#database)
+- [API and WebSocket](#api-and-websocket)
+- [Tests and Checks](#tests-and-checks)
+- [Production Deployment](#production-deployment)
+- [Persistent Data and Backups](#persistent-data-and-backups)
+- [Limitations and Warnings](#limitations-and-warnings)
+- [Troubleshooting](#troubleshooting)
 
 ## Architecture
 
-Le projet est composé de trois modules applicatifs et d'une base MySQL.
+The project consists of three application modules and a MySQL database.
 
 ```mermaid
 flowchart LR
-    U[Utilisateur] --> F[Frontend Angular]
-    F -->|HTTP /api et /login| B[Backend Node.js / Express]
+    U[User] --> F[Angular Frontend]
+    F -->|HTTP /api and /login| B[Node.js / Express Backend]
     F <-->|Socket.IO| B
-    B <-->|Requêtes SQL| DB[(MySQL / MargotDB)]
-    B -->|Processus enfant Python| AI[Module IA / OCR]
-    B --> FS[(user_data et public)]
-    AI -->|Lecture du PDF| FS
+    B <-->|SQL queries| DB[(MySQL / MargotDB)]
+    B -->|Python child process| AI[AI / OCR Module]
+    B --> FS[(user_data and public)]
+    AI -->|PDF read| FS
     AI -->|progress / new-calificado / done| B
 ```
 
-Le module IA n'est pas un serveur HTTP indépendant. Le backend lance
-`AsistenteWebTFGBackendAIModule/main.py` comme processus enfant lors de
-l'événement Socket.IO `examen-predict`.
+The AI module is not a standalone HTTP server. The backend spawns `AsistenteWebTFGBackendAIModule/main.py` as a child process when the Socket.IO event `examen-predict` is received.
 
-## Structure du dépôt
+## Repository Structure
 
 ```text
 Madrina/
-├── AsistenteWebTFG/                   # Frontend Angular
-│   ├── src/app/                       # Pages et composants
-│   ├── src/services/                  # API, authentification, stockage, socket
-│   ├── src/models/                    # Modèles TypeScript
-│   └── src/environments/              # URLs backend dev/prod
+├── AsistenteWebTFG/                   # Angular frontend
+│   ├── src/app/                       # Pages and components
+│   ├── src/services/                  # API, authentication, storage, socket
+│   ├── src/models/                    # TypeScript models
+│   └── src/environments/             # Backend URLs for dev/prod
 │
-├── AsistenteWebTFGBackend/            # Backend Express et Socket.IO
-│   ├── bin/www                        # Point d'entrée du serveur
-│   ├── routes/api.js                  # API métier authentifiée
-│   ├── routes/login.js                # Inscription et authentification
-│   ├── routes/socket.js               # Import PDF, images, ZIP et lancement IA
-│   ├── DAL.js                         # Accès aux données utilisés par l'IA
-│   ├── connection.js                  # Connexion MySQL
-│   ├── user_data/                     # PDF et images de travail persistants
-│   ├── public/                        # ZIP générés et téléchargeables
-│   └── mail/                          # Modèle de récupération de mot de passe
+├── AsistenteWebTFGBackend/            # Express and Socket.IO backend
+│   ├── bin/www                        # Server entry point
+│   ├── routes/api.js                  # Authenticated business API
+│   ├── routes/login.js                # Registration and authentication
+│   ├── routes/socket.js               # PDF import, images, ZIP and AI launch
+│   ├── DAL.js                         # Data access layer used by the AI module
+│   ├── connection.js                  # MySQL connection
+│   ├── user_data/                     # Persistent PDF and working images
+│   ├── public/                        # Generated downloadable ZIPs
+│   └── mail/                          # Password recovery email template
 │
-├── AsistenteWebTFGBackendAIModule/    # Pipeline Python de reconnaissance
-│   ├── main.py                        # Point d'entrée appelé par Node.js
-│   ├── core/checkpoints/              # Modèles PyTorch utilisés en production
-│   ├── Modules/                       # Émission des résultats, entraînement, test
-│   ├── utils/                         # OCR, traitement PDF et modèles CNN
-│   └── data/                          # Préparation et analyse des datasets
+├── AsistenteWebTFGBackendAIModule/    # Python recognition pipeline
+│   ├── main.py                        # Entry point called by Node.js
+│   ├── core/checkpoints/              # PyTorch models used in production
+│   ├── Modules/                       # Result emission, training, testing
+│   ├── utils/                         # OCR, PDF processing and CNN models
+│   └── data/                          # Dataset preparation and analysis
 │
-├── MargotDB.sql                       # Création du schéma MySQL
-├── run_full_app.sh                    # Démarrage backend + frontend
-├── lounch.sh                          # Lanceur du script précédent
-└── README_projet.md                   # Documentation globale
+├── MargotDB.sql                       # MySQL schema creation
+├── run_full_app.sh                    # Backend + frontend launcher
+├── lounch.sh                          # Wrapper for the above script
+└── README_projet.md                   # Global documentation
 ```
 
-Le dossier `OriginalVersion/` contient des versions historiques et ne participe
-pas au fonctionnement courant de l'application.
+The `OriginalVersion/` folder contains historical versions and is not part of the active application.
 
 ## Technologies
 
 ### Frontend
 
-- Angular 13 ;
-- TypeScript 4.5 ;
-- Angular Material et Angular CDK ;
-- RxJS ;
-- `ngx-socket-io` ;
-- SCSS.
+- Angular 13
+- TypeScript 4.5
+- Angular Material and Angular CDK
+- RxJS
+- `ngx-socket-io`
+- SCSS
 
 ### Backend
 
-- Node.js et Express 4 ;
-- Socket.IO 4 ;
-- MySQL avec `mysql2` ;
-- génération d'archives avec `archiver` ;
-- traitement de PDF avec Poppler et Ghostscript ;
-- vues Pug pour les pages d'erreur.
+- Node.js and Express 4
+- Socket.IO 4
+- MySQL with `mysql2`
+- Archive generation with `archiver`
+- PDF processing with Poppler and Ghostscript
+- Pug views for error pages
 
-### Module IA
+### AI Module
 
-- Python 3 ;
-- PyTorch et Torchvision ;
-- OpenCV ;
-- NumPy et Pillow ;
-- PyPDF2 ;
-- Levenshtein ;
-- deux modèles CNN :
-  - `best_model.pt` pour les caractères du DNI/NIF ;
-  - `exammodel4.pt` pour les chiffres de la note.
+- Python 3
+- PyTorch and Torchvision
+- OpenCV
+- NumPy and Pillow
+- PyPDF2
+- Levenshtein
+- Two CNN models:
+  - `best_model.pt` for DNI/NIF character recognition
+  - `exammodel4.pt` for handwritten grade digit recognition
 
-### Base de données
+### Database
 
-- MySQL ;
-- schéma `MargotDB` ;
-- tables principales : `usuarios`, `preferencias`, `asignaturas`, `alumnos`,
-  `examenes`, `calificados` et `correo_validacion`.
+- MySQL
+- Schema `MargotDB`
+- Main tables: `usuarios`, `preferencias`, `asignaturas`, `alumnos`, `examenes`, `calificados`, and `correo_validacion`
 
-## Prérequis
+## Prerequisites
 
-L'environnement cible recommandé est Debian ou Ubuntu.
+The recommended target environment is Debian or Ubuntu.
 
-- Node.js compatible avec Angular 13, de préférence Node.js 16 ;
-- npm ;
-- Python 3 et le module `venv` ;
-- MySQL Server ;
-- Poppler : `pdftoppm`, `pdfseparate` et `pdfunite` ;
-- Ghostscript : `ps2pdf` ;
-- la commande `mail` et un MTA configuré si la récupération de mot de passe est utilisée ;
-- suffisamment d'espace disque pour les PDF, images JPEG temporaires et ZIP.
+- Node.js compatible with Angular 13, preferably Node.js 16
+- npm
+- Python 3 and the `venv` module
+- MySQL Server
+- Poppler: `pdftoppm`, `pdfseparate`, and `pdfunite`
+- Ghostscript: `ps2pdf`
+- The `mail` command and a configured MTA if password recovery is needed
+- Enough disk space for PDFs, temporary JPEG images, and ZIPs
 
-Installation des paquets système disponibles sous Debian/Ubuntu :
+Install the required system packages on Debian/Ubuntu:
 
 ```bash
 sudo apt update
 sudo apt install mysql-server python3 python3-venv python3-pip \
   poppler-utils ghostscript mailutils
 ```
+
+Verify the tools are available:
 
 ```bash
 pdftoppm -v
@@ -156,14 +153,13 @@ pdfunite -v
 ps2pdf -h
 ```
 
-Le GPU CUDA est facultatif. Le module IA choisit automatiquement CUDA lorsqu'il
-est disponible et utilisable, sinon il fonctionne sur CPU.
+A CUDA GPU is optional. The AI module automatically selects CUDA when available, otherwise it runs on CPU.
 
-## Installation locale
+## Local Installation
 
-Toutes les commandes suivantes sont exécutées depuis la racine du dépôt.
+All commands are run from the repository root.
 
-### 1. Installer le frontend
+### 1. Install the frontend
 
 ```bash
 cd AsistenteWebTFG
@@ -171,7 +167,7 @@ npm ci
 cd ..
 ```
 
-### 2. Installer le backend
+### 2. Install the backend
 
 ```bash
 cd AsistenteWebTFGBackend
@@ -179,10 +175,9 @@ npm ci
 cd ..
 ```
 
-### 3. Installer le module IA
+### 3. Install the AI module
 
-Par défaut, le backend cherche `../.venv/bin/python`. Ce chemin est configurable
-avec `AI_PYTHON_BIN`. L'environnement virtuel peut être créé à la racine :
+By default, the backend looks for `../.venv/bin/python`. This path is configurable via `AI_PYTHON_BIN`. Create the virtual environment at the root:
 
 ```bash
 python3 -m venv .venv
@@ -194,29 +189,27 @@ python -m pip install \
 deactivate
 ```
 
-Les dépendances `torchvision`, `matplotlib` et `pandas` sont surtout utilisées
-par les outils d'entraînement, de test et d'analyse des datasets.
+`torchvision`, `matplotlib`, and `pandas` are mainly used by the training, testing, and dataset analysis tools.
 
-Vérifier la présence des modèles :
+Verify the model checkpoints are present:
 
 ```bash
 test -f AsistenteWebTFGBackendAIModule/core/checkpoints/best_model.pt
 test -f AsistenteWebTFGBackendAIModule/core/checkpoints/exammodel4.pt
 ```
 
-### 4. Initialiser MySQL
+### 4. Initialise MySQL
 
-Attention : `MargotDB.sql` supprime et recrée les tables du schéma. Ne pas
-l'exécuter sur une base de production contenant des données sans sauvegarde.
+**Warning:** `MargotDB.sql` drops and recreates all tables in the schema. Do not run it against a production database with data unless you have a backup.
 
 ```bash
 mysql -u root -p < MargotDB.sql
 ```
 
-Créer de préférence un utilisateur dédié :
+Create a dedicated database user:
 
 ```sql
-CREATE USER 'madrina'@'localhost' IDENTIFIED BY 'mot_de_passe_solide';
+CREATE USER 'madrina'@'localhost' IDENTIFIED BY 'strong_password';
 GRANT SELECT, INSERT, UPDATE, DELETE
 ON MargotDB.* TO 'madrina'@'localhost';
 FLUSH PRIVILEGES;
@@ -226,13 +219,13 @@ FLUSH PRIVILEGES;
 
 ### Backend
 
-Créer `AsistenteWebTFGBackend/.env` :
+Create `AsistenteWebTFGBackend/.env`:
 
 ```dotenv
 DB_HOST=127.0.0.1
 DB_USER=madrina
 DB_PORT=3306
-DB_PASSWORD=mot_de_passe_solide
+DB_PASSWORD=strong_password
 DB_NAME=MargotDB
 PORT=3000
 AI_PYTHON_BIN=../.venv/bin/python
@@ -242,202 +235,193 @@ AI_PDF_WORKERS=4
 AI_DETECTION_WORKERS=4
 ```
 
-`connection.js` utilise `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_PORT`,
-`DB_NAME` et `DB_CONNECTION_LIMIT`. Les valeurs Docker sont définies dans
-`docker-compose.yml`.
+`connection.js` uses `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_PORT`, `DB_NAME`, and `DB_CONNECTION_LIMIT`. Docker values are defined in `docker-compose.yml`.
 
-Le serveur écoute sur le port `3000` par défaut. La variable `PORT` permet de le
-modifier.
+The server listens on port `3000` by default. The `PORT` variable overrides this.
 
 ### Frontend
 
-Développement :
+Development:
 
 ```typescript
 // AsistenteWebTFG/src/environments/environment.ts
 backend: 'http://localhost:3000'
 ```
 
-Production :
+Production:
 
 ```typescript
 // AsistenteWebTFG/src/environments/environment.prod.ts
 backend: 'https://madrina.example.org'
 ```
 
-La même URL est utilisée pour :
+The same URL is used for:
 
-- les appels HTTP vers `/api` et `/login` ;
-- la connexion Socket.IO ;
-- les téléchargements exposés par le backend.
+- HTTP calls to `/api` and `/login`
+- the Socket.IO connection
+- downloads served by the backend
 
-Le fichier `src/proxy.conf.json` contient une ancienne adresse distante et
-n'est pas référencé par le script `npm start`. Pour un développement local
-standard, la valeur utile reste `http://localhost:3000`.
+`src/proxy.conf.json` contains a legacy remote address and is not referenced by `npm start`. For standard local development, keep the value as `http://localhost:3000`.
 
-### Courriels
+### Emails
 
-Le fichier `AsistenteWebTFGBackend/mail/config.json` contient :
+`AsistenteWebTFGBackend/mail/config.json` contains:
 
-- le domaine utilisé dans les liens de réinitialisation ;
-- l'objet du courriel.
+- the domain used in password reset links
+- the email subject
 
-Le backend appelle directement la commande système `mail`. La récupération de
-mot de passe nécessite donc un MTA configuré et autorisé à envoyer les messages.
+The backend calls the system `mail` command directly. Password recovery therefore requires a configured MTA authorised to send messages.
 
-### Répertoires de travail
+### Working Directories
 
-Le backend crée si nécessaire :
+The backend creates the following directories if they do not exist:
 
-- `AsistenteWebTFGBackend/user_data/` pour les PDF et images d'examens ;
-- `AsistenteWebTFGBackend/public/` pour les ZIP téléchargeables.
+- `AsistenteWebTFGBackend/user_data/` for exam PDFs and images
+- `AsistenteWebTFGBackend/public/` for downloadable ZIPs
 
-Le module IA crée temporairement :
+The AI module creates a temporary workspace at:
 
 ```text
 AsistenteWebTFGBackendAIModule/utils/.img-dumps/<index>/
 ```
 
-Le processus système doit avoir les droits de lecture et d'écriture sur ces
-répertoires.
+The system process must have read and write access to these directories.
 
-## Lancement
+## Running the App
 
-### Lancement complet
+### Full launch
 
-Après installation et configuration :
+After installation and configuration:
 
 ```bash
 chmod +x lounch.sh run_full_app.sh
 ./lounch.sh
 ```
 
-Le script :
+The script:
 
-1. démarre le backend sur `http://localhost:3000` ;
-2. attend deux secondes ;
-3. démarre Angular sur `http://localhost:4200` ;
-4. arrête le backend lorsque le frontend est interrompu.
+1. starts the backend on `http://localhost:3000`
+2. waits two seconds
+3. starts Angular on `http://localhost:4200`
+4. stops the backend when the frontend is interrupted
 
-Le script ne démarre pas MySQL et n'installe aucune dépendance.
+The script does not start MySQL and does not install any dependencies.
 
-### Lancement séparé
+### Separate launch
 
-Terminal 1 :
+Terminal 1:
 
 ```bash
 cd AsistenteWebTFGBackend
 npm start
 ```
 
-Terminal 2 :
+Terminal 2:
 
 ```bash
 cd AsistenteWebTFG
 npm start
 ```
 
-Ouvrir ensuite :
+Then open:
 
 ```text
 http://localhost:4200
 ```
 
-### Exécution manuelle du module IA
+### Running the AI module manually
 
-Le lancement normal passe par le backend. Pour un diagnostic manuel :
+The normal launch path goes through the backend. For manual debugging:
 
 ```bash
 cd AsistenteWebTFGBackendAIModule
 
-AI_MODULE_USER_DATA_ROOT=/chemin/absolu/vers/AsistenteWebTFGBackend/user_data \
+AI_MODULE_USER_DATA_ROOT=/absolute/path/to/AsistenteWebTFGBackend/user_data \
 ../.venv/bin/python main.py \
-  "utilisateur-matiere-examen" \
-  "nom_du_pdf_sans_extension" \
+  "user-subject-exam" \
+  "pdf_filename_without_extension" \
   '[{"dni":"12345678Z","nombre":"Ada","apellidos":"Lovelace"}]'
 ```
 
-Le PDF attendu est :
+The expected PDF path is:
 
 ```text
 AsistenteWebTFGBackend/user_data/
-└── utilisateur-matiere-examen/
-    └── nom_du_pdf_sans_extension.pdf
+└── user-subject-exam/
+    └── pdf_filename_without_extension.pdf
 ```
 
-## Fonctionnement des modules
+## Module Overview
 
-### Frontend Angular
+### Angular Frontend
 
-Les routes principales sont :
+Main routes:
 
-| Route | Fonction |
-| --- | --- |
-| `/#/login` | Authentification |
-| `/#/sign-up` | Création de compte |
-| `/#/password` | Réinitialisation du mot de passe |
-| `/#/asignaturas` | Gestion des matières et examens |
-| `/#/examen/:id` | Correction classique |
-| `/#/examen-advanced/:id` | Correction automatisée avec l'IA |
+| Route | Purpose |
+|---|---|
+| `/#/login` | Authentication |
+| `/#/sign-up` | Account creation |
+| `/#/password` | Password reset |
+| `/#/asignaturas` | Subject and exam management |
+| `/#/examen/:id` | Manual grading |
+| `/#/examen-advanced/:id` | AI-assisted automated grading |
 
-Le frontend communique avec le backend à travers :
+The frontend communicates with the backend through:
 
-- `src/services/api/api.service.ts` pour l'API métier ;
-- `src/services/authentication/authentication.service.ts` pour les comptes ;
-- `src/services/socket/socket.service.ts` pour les fichiers et la progression.
+- `src/services/api/api.service.ts` for the business API
+- `src/services/authentication/authentication.service.ts` for accounts
+- `src/services/socket/socket.service.ts` for files and progress
 
-### Backend Node.js
+### Node.js Backend
 
-Le point d'entrée est `AsistenteWebTFGBackend/bin/www`.
+The entry point is `AsistenteWebTFGBackend/bin/www`.
 
-Au démarrage, le backend :
+On startup, the backend:
 
-1. charge Express ;
-2. vérifie la connexion MySQL ;
-3. crée les dossiers `public` et `user_data` si nécessaire ;
-4. monte les routes `/api`, `/login`, `/info` et `/public` ;
-5. initialise Socket.IO ;
-6. écoute sur `PORT` ou sur `3000`.
+1. loads Express
+2. verifies the MySQL connection
+3. creates the `public` and `user_data` folders if needed
+4. mounts the `/api`, `/login`, `/info`, and `/public` routes
+5. initialises Socket.IO
+6. listens on `PORT` or `3000`
 
-Les routes `/api` sont protégées par un intercepteur qui vérifie l'identifiant
-et le jeton de session dans la table `usuarios`.
+The `/api` routes are protected by an interceptor that verifies the session ID and token against the `usuarios` table.
 
-### Pipeline IA
+### AI Pipeline
 
-Lorsqu'un client émet `examen-predict`, le backend :
+When a client emits `examen-predict`, the backend:
 
-1. construit l'index `<utilisateur>-<matiere>-<examen>` ;
-2. charge la liste des étudiants de la matière ;
-3. lance `main.py` avec Python ;
-4. transmet `AI_MODULE_USER_DATA_ROOT` au processus ;
-5. lit les résultats ligne par ligne ;
-6. insère les copies reconnues dans `calificados` ;
-7. marque l'examen comme prédit.
+1. builds the index `<user>-<subject>-<exam>`
+2. loads the student list for the subject
+3. launches `main.py` with Python
+4. passes `AI_MODULE_USER_DATA_ROOT` to the process
+5. reads results line by line
+6. inserts recognised copies into `calificados`
+7. marks the exam as predicted
 
-Le pipeline Python :
+The Python pipeline:
 
-1. charge les deux checkpoints PyTorch ;
-2. convertit les zones utiles du PDF en images avec `pdftoppm` ;
-3. détecte les premières pages des copies ;
-4. extrait et reconnaît les caractères du DNI/NIF ;
-5. associe le résultat OCR à l'étudiant le plus proche ;
-6. reconnaît la note manuscrite ;
-7. émet le résultat et supprime les images temporaires.
+1. loads the two PyTorch checkpoints
+2. converts the relevant PDF areas to images with `pdftoppm`
+3. detects the first page of each copy
+4. extracts and recognises DNI/NIF characters
+5. matches the OCR result to the closest student
+6. recognises the handwritten grade
+7. emits the result and removes temporary images
 
-Protocole de sortie standard :
+Standard output protocol:
 
 ```text
-progress <pourcentage> <état>
-new-calificado <json_etudiant>
-done <durée>
+progress <percentage> <status>
+new-calificado <student_json>
+done <duration>
 ```
 
-La documentation détaillée du module est disponible dans
-`AsistenteWebTFGBackendAIModule/README_AI_ASSISTANCE.md`.
+Detailed module documentation is available in `AsistenteWebTFGBackendAIModule/README_AI_ASSISTANCE.md`.
 
-## Base de données
+## Database
 
-Relations principales :
+Main relationships:
 
 ```text
 usuarios
@@ -451,37 +435,37 @@ usuarios
 └── correo_validacion
 ```
 
-Description des tables :
+Table descriptions:
 
-| Table | Rôle |
-| --- | --- |
-| `usuarios` | Comptes, mot de passe chiffré et jeton de session |
-| `preferencias` | Encodage, séparateur CSV et présence d'une ligne d'en-tête |
-| `asignaturas` | Matières appartenant à un utilisateur |
-| `alumnos` | Étudiants inscrits dans une matière |
-| `examenes` | Métadonnées et état de traitement des examens |
-| `calificados` | Étudiant, pages, note et état de vérification |
-| `correo_validacion` | Jetons de récupération de mot de passe |
+| Table | Role |
+|---|---|
+| `usuarios` | Accounts, hashed password, and session token |
+| `preferencias` | CSV encoding, separator, and header row setting |
+| `asignaturas` | Subjects belonging to a user |
+| `alumnos` | Students enrolled in a subject |
+| `examenes` | Exam metadata and processing state |
+| `calificados` | Student, pages, grade, and verification state |
+| `correo_validacion` | Password recovery tokens |
 
-Sauvegarde :
+Backup:
 
 ```bash
 mysqldump -u madrina -p --single-transaction MargotDB > MargotDB-backup.sql
 ```
 
-Restauration :
+Restore:
 
 ```bash
 mysql -u madrina -p MargotDB < MargotDB-backup.sql
 ```
 
-## API et WebSocket
+## API and WebSocket
 
-### API HTTP
+### HTTP API
 
-Les routes utilisent principalement `POST`.
+Routes use `POST` throughout.
 
-Routes publiques de compte :
+Public account routes:
 
 ```text
 POST /login/insert
@@ -492,7 +476,7 @@ POST /login/correo/select
 POST /login/password/update
 ```
 
-Principales routes authentifiées :
+Main authenticated routes:
 
 ```text
 POST /api/asignaturas
@@ -517,9 +501,9 @@ POST /api/prediction/statistics
 POST /api/usuario/update/correo
 ```
 
-### Événements Socket.IO
+### Socket.IO Events
 
-Événements principaux envoyés par le client :
+Main events sent by the client:
 
 ```text
 insert-alumno
@@ -530,7 +514,7 @@ examen-predict
 examen-predict-kill
 ```
 
-Événements principaux émis par le serveur :
+Main events emitted by the server:
 
 ```text
 insert-examen-procesar
@@ -544,7 +528,7 @@ select-examen-zip
 examen-predict-response
 ```
 
-## Tests et vérifications
+## Tests and Checks
 
 ### Frontend
 
@@ -554,24 +538,22 @@ npm test
 npm run build
 ```
 
-Les tests unitaires Angular utilisent Karma et nécessitent un navigateur Chrome
-ou Chromium compatible.
+Angular unit tests use Karma and require a compatible Chrome or Chromium browser.
 
 ### Backend
 
-Le backend ne définit actuellement pas de suite de tests dans `package.json`.
-Vérification minimale :
+The backend does not currently define a test suite in `package.json`. Minimal check:
 
 ```bash
 cd AsistenteWebTFGBackend
 npm start
 ```
 
-Le serveur doit confirmer son démarrage sans afficher d'erreur MySQL.
+The server should confirm startup with no MySQL errors.
 
-### Module IA
+### AI Module
 
-Vérification des imports de production :
+Verify production imports:
 
 ```bash
 source .venv/bin/activate
@@ -579,43 +561,35 @@ python -c "import torch, cv2, numpy, PIL, PyPDF2, Levenshtein"
 deactivate
 ```
 
-Les scripts `Modules/train/train.py`, `Modules/test/test.py` et `example.py`
-sont actuellement couplés au chargement des arguments de `utils/constants.py`.
-Leur interface autonome doit être découplée avant de pouvoir les intégrer à une
-CI standard. Les scripts de préparation sous `data/` restent indépendants.
+`Modules/train/train.py`, `Modules/test/test.py`, and `example.py` are currently coupled to argument loading from `utils/constants.py`. Their standalone interface must be decoupled before they can be integrated into a standard CI pipeline. The preparation scripts under `data/` remain independent.
 
-### Parcours de validation conseillé
+### Recommended Validation Walkthrough
 
-1. créer un compte ;
-2. créer une matière ;
-3. importer la liste des étudiants ;
-4. créer un examen ;
-5. envoyer un PDF contenant plusieurs copies ;
-6. vérifier la conversion des pages ;
-7. lancer la prédiction ;
-8. corriger les associations et les notes ;
-9. générer et télécharger le ZIP ;
-10. contrôler les PDF et CSV produits.
+1. create an account
+2. create a subject
+3. import the student list
+4. create an exam
+5. upload a PDF containing multiple copies
+6. verify the page conversion
+7. launch the prediction
+8. correct the associations and grades
+9. generate and download the ZIP
+10. check the produced PDFs and CSVs
 
-## Déploiement en production
+## Production Deployment
 
-Le déploiement recommandé utilise les Dockerfiles et `docker-compose.yml`
-présents à la racine. La procédure complète est décrite dans
-[`README_deploy.md`](README_deploy.md). Démarrage rapide :
+The recommended deployment uses the Dockerfiles and `docker-compose.yml` at the repository root. The full procedure is described in [`README_deploy.md`](README_deploy.md). Quick start:
 
 ```bash
 docker compose up --build -d
 docker compose logs -f
 ```
 
-Le frontend est disponible sur `http://localhost:4200`. Nginx relaie les API,
-Socket.IO, `/public/` et `/info/` vers le backend. Le module IA s'exécute dans
-le conteneur backend, comme processus Python enfant, et non comme service HTTP.
+The frontend is available on `http://localhost:4200`. Nginx proxies the API, Socket.IO, `/public/`, and `/info/` to the backend. The AI module runs inside the backend container as a Python child process, not as an HTTP service.
 
-La procédure suivante reste valable pour une installation sans Docker avec
-Nginx et systemd.
+The following procedure remains valid for a non-Docker installation with Nginx and systemd.
 
-### 1. Préparer le serveur
+### 1. Prepare the server
 
 ```bash
 sudo apt update
@@ -623,29 +597,27 @@ sudo apt install nginx mysql-server python3-venv python3-pip \
   poppler-utils ghostscript mailutils
 ```
 
-Installer également :
+Also install:
 
-- Node.js 16 et npm ;
-- un certificat TLS, par exemple avec Certbot ;
-- un MTA fonctionnel si l'envoi de courriels est requis.
+- Node.js 16 and npm
+- a TLS certificate, for example with Certbot
+- a working MTA if email sending is required
 
-### 2. Installer l'application
+### 2. Install the application
 
-Exemple de répertoire :
+Example directory:
 
 ```text
 /opt/madrina/
 ```
 
-Installer les dépendances comme dans la section
-[Installation locale](#installation-locale), créer `/opt/madrina/.venv`, puis
-configurer :
+Install dependencies as described in [Local Installation](#local-installation), create `/opt/madrina/.venv`, then configure:
 
 ```text
 /opt/madrina/AsistenteWebTFGBackend/.env
 ```
 
-Le compte système qui exécute le backend doit pouvoir écrire dans :
+The system account running the backend must have write access to:
 
 ```text
 /opt/madrina/AsistenteWebTFGBackend/user_data
@@ -653,15 +625,15 @@ Le compte système qui exécute le backend doit pouvoir écrire dans :
 /opt/madrina/AsistenteWebTFGBackendAIModule/utils/.img-dumps
 ```
 
-### 3. Construire le frontend
+### 3. Build the frontend
 
-Configurer d'abord `environment.prod.ts` avec le domaine public :
+First set `environment.prod.ts` to the public domain:
 
 ```typescript
 backend: 'https://madrina.example.org'
 ```
 
-Puis :
+Then:
 
 ```bash
 cd /opt/madrina/AsistenteWebTFG
@@ -669,15 +641,15 @@ npm ci
 npm run build
 ```
 
-Les fichiers statiques sont générés dans :
+Static files are generated in:
 
 ```text
 /opt/madrina/AsistenteWebTFG/dist/frontend/
 ```
 
-### 4. Créer le service systemd
+### 4. Create the systemd service
 
-Créer `/etc/systemd/system/madrina-backend.service` :
+Create `/etc/systemd/system/madrina-backend.service`:
 
 ```ini
 [Unit]
@@ -699,13 +671,13 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-Adapter le chemin de Node.js obtenu avec :
+Adjust the Node.js path obtained with:
 
 ```bash
 command -v node
 ```
 
-Activer le service :
+Enable the service:
 
 ```bash
 sudo systemctl daemon-reload
@@ -713,15 +685,15 @@ sudo systemctl enable --now madrina-backend
 sudo systemctl status madrina-backend
 ```
 
-Consulter les logs :
+View logs:
 
 ```bash
 sudo journalctl -u madrina-backend -f
 ```
 
-### 5. Configurer Nginx
+### 5. Configure Nginx
 
-Exemple `/etc/nginx/sites-available/madrina` :
+Example `/etc/nginx/sites-available/madrina`:
 
 ```nginx
 server {
@@ -773,7 +745,7 @@ server {
 }
 ```
 
-Activer puis tester :
+Enable and test:
 
 ```bash
 sudo ln -s /etc/nginx/sites-available/madrina /etc/nginx/sites-enabled/madrina
@@ -781,11 +753,9 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-Ajouter ensuite HTTPS et rediriger HTTP vers HTTPS. La durée des traitements IA
-et la taille des PDF justifient les délais Socket.IO élevés et une limite
-d'upload adaptée.
+Then add HTTPS and redirect HTTP to HTTPS. The long AI processing times and large PDF sizes justify the high Socket.IO timeouts and the generous upload size limit.
 
-### 6. Vérifications après déploiement
+### 6. Post-deployment checks
 
 ```bash
 curl -I https://madrina.example.org/
@@ -793,64 +763,58 @@ sudo systemctl status madrina-backend mysql nginx
 sudo journalctl -u madrina-backend --since "10 minutes ago"
 ```
 
-Effectuer ensuite le parcours fonctionnel complet avec un PDF de test.
+Then run the full functional walkthrough with a test PDF.
 
-## Données persistantes et sauvegardes
+## Persistent Data and Backups
 
-Les éléments à sauvegarder sont :
+Items to back up:
 
 ```text
-Base MySQL MargotDB
+MySQL database MargotDB
 AsistenteWebTFGBackend/user_data/
 AsistenteWebTFGBackend/public/
 AsistenteWebTFGBackend/.env
 AsistenteWebTFGBackendAIModule/core/checkpoints/
 ```
 
-`user_data/` contient les originaux et les images générées. `public/` contient
-les exports ZIP. Ces dossiers peuvent devenir très volumineux ; mettre en place :
+`user_data/` contains the originals and generated images. `public/` contains ZIP exports. Both folders can grow large — put in place:
 
-- une politique de rétention ;
-- une surveillance de l'espace disque ;
-- des sauvegardes cohérentes avec la base ;
-- un nettoyage contrôlé des exports obsolètes.
+- a retention policy
+- disk space monitoring
+- backups consistent with the database
+- controlled cleanup of stale exports
 
-Ne pas supprimer un dossier d'examen tant que ses métadonnées existent encore
-dans MySQL.
+Do not delete an exam folder while its metadata still exists in MySQL.
 
-## Limitations et points de vigilance
+## Limitations and Warnings
 
-Avant une exposition publique, traiter au minimum les points suivants :
+Before any public exposure, address at minimum the following points:
 
-1. Socket.IO et CORS acceptent actuellement une origine très large.
-2. La clé utilisée pour le hachage des comptes est codée dans `routes/login.js`.
-3. Le backend construit certaines commandes système à partir de données
-   applicatives ; les entrées et noms de fichiers doivent être strictement
-   contrôlés.
-4. Le stockage des PDF et ZIP est local au serveur et n'a pas de mécanisme
-   automatique de rétention.
-5. Les dépendances Python Docker sont listées dans `requirements-docker.txt`,
-   mais leurs versions doivent être maintenues avec les modèles.
-6. Il n'existe pas de tests automatisés backend ni de test d'intégration global.
-7. Les outils d'entraînement/test IA sont couplés aux arguments du runtime.
-8. Les modèles doivent rester compatibles avec la version de PyTorch installée.
+1. Socket.IO and CORS currently accept a very broad origin.
+2. The key used to hash accounts is hardcoded in `routes/login.js`.
+3. The backend builds certain system commands from application data — inputs and filenames must be strictly validated.
+4. PDF and ZIP storage is local to the server with no automatic retention mechanism.
+5. Python Docker dependencies are listed in `requirements-docker.txt` but their versions must be kept in sync with the models.
+6. There are no automated backend tests or global integration tests.
+7. The AI training/testing tools are coupled to the runtime argument loader.
+8. Models must remain compatible with the installed version of PyTorch.
 
-Mesures recommandées :
+Recommended mitigations:
 
-- déplacer les secrets restants dans des variables d'environnement ;
-- limiter CORS au domaine du frontend ;
-- utiliser HTTPS uniquement ;
-- exécuter Node.js et MySQL avec des comptes non privilégiés ;
-- ajouter une validation stricte des fichiers importés ;
-- ajouter des migrations de base au lieu de rejouer le script destructif ;
-- verrouiller et auditer régulièrement `requirements-docker.txt` ;
-- ajouter des tests d'intégration sur l'import et le découpage PDF.
+- move remaining secrets into environment variables
+- restrict CORS to the frontend domain
+- use HTTPS only
+- run Node.js and MySQL under unprivileged accounts
+- add strict validation of uploaded files
+- add database migrations instead of replaying the destructive schema script
+- pin and regularly audit `requirements-docker.txt`
+- add integration tests covering PDF import and splitting
 
-## Dépannage
+## Troubleshooting
 
-### Le backend s'arrête immédiatement
+### Backend exits immediately
 
-Cause probable : connexion MySQL impossible.
+Probable cause: cannot connect to MySQL.
 
 ```bash
 cd AsistenteWebTFGBackend
@@ -859,28 +823,27 @@ mysql -h 127.0.0.1 -u madrina -p MargotDB
 npm start
 ```
 
-Vérifier aussi que le nom de base est bien `MargotDB` dans la configuration
-active de `connection.js`.
+Also verify that the database name is `MargotDB` in the active `connection.js` configuration.
 
-### Le frontend ne contacte pas le backend
+### Frontend cannot reach the backend
 
-Vérifier :
+Check:
 
-- `src/environments/environment.ts` en développement ;
-- `src/environments/environment.prod.ts` après un build ;
-- le port `3000` ;
-- la configuration Nginx de `/api`, `/login` et `/socket.io`.
+- `src/environments/environment.ts` in development
+- `src/environments/environment.prod.ts` after a build
+- port `3000`
+- the Nginx configuration for `/api`, `/login`, and `/socket.io`
 
-### La connexion Socket.IO échoue derrière Nginx
+### Socket.IO connection fails behind Nginx
 
-Vérifier les en-têtes `Upgrade` et `Connection`, puis :
+Verify the `Upgrade` and `Connection` headers, then:
 
 ```bash
 sudo nginx -t
 sudo journalctl -u madrina-backend -f
 ```
 
-### La conversion PDF échoue
+### PDF conversion fails
 
 ```bash
 command -v pdftoppm
@@ -889,9 +852,9 @@ command -v pdfunite
 command -v ps2pdf
 ```
 
-Vérifier également les droits d'écriture sur `user_data/` et l'espace disque.
+Also check write permissions on `user_data/` and available disk space.
 
-### La prédiction IA ne démarre pas
+### AI prediction does not start
 
 ```bash
 test -x .venv/bin/python
@@ -900,28 +863,29 @@ test -f AsistenteWebTFGBackendAIModule/core/checkpoints/best_model.pt
 test -f AsistenteWebTFGBackendAIModule/core/checkpoints/exammodel4.pt
 ```
 
-Vérifier aussi `AI_PYTHON_BIN`, `AI_MODULE_PATH` et
-`AI_MODULE_USER_DATA_ROOT`. Le backend résout le nom demandé et accepte le seul
-PDF du dossier lorsqu'il n'y en a qu'un.
+Also verify `AI_PYTHON_BIN`, `AI_MODULE_PATH`, and `AI_MODULE_USER_DATA_ROOT`. The backend resolves the requested name and accepts the only PDF in the folder when there is exactly one.
 
-### Les exports ZIP restent bloqués
+### ZIP exports remain stuck
 
-Le backend utilise `pdfseparate` et `pdfunite` pour extraire les pages de chaque
-copie. Vérifier que Poppler est disponible :
+The backend uses `pdfseparate` and `pdfunite` to extract each copy's pages. Verify Poppler is available:
 
 ```bash
 pdfseparate -v
 pdfunite -v
 ```
 
-### Les courriels de récupération ne partent pas
+### Password recovery emails are not sent
 
 ```bash
 command -v mail
-echo "Test" | mail -s "Madrina test" destinataire@example.org
+echo "Test" | mail -s "Madrina test" recipient@example.org
 ```
 
+<<<<<<< HEAD
 Vérifier ensuite le MTA, le domaine dans `mail/config.json` et les journaux du
 service de messagerie.
 # Madrina_Valencia_UPV
 Madrina is a web application to help teacher to deliver marked exams to students. Madrina helps the teacher to create, from a PDF with all students' exams, a set of PDF files with just one exam in each one. The name of the file is the ID of the student, student's name and the name of the course/exam.
+=======
+Then check the MTA, the domain in `mail/config.json`, and the mail service logs.
+>>>>>>> b7a9dd9 (Final)

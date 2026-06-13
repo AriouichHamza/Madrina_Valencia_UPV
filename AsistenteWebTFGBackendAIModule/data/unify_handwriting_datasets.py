@@ -1,17 +1,17 @@
 """
-Unifier deux datasets de caractères manuscrits en un seul dataset standardisé.
+Merge two handwritten-character datasets into a single standardised dataset.
 
-Entrées attendues :
+Expected inputs:
   1) archive (1)(1).zip
-     - augmented_images/augmented_images1/<classe>/*.png
-     - handwritten-english-characters-and-digits/combined_folder/{train,test}/<classe>/*.png
+     - augmented_images/augmented_images1/<class>/*.png
+     - handwritten-english-characters-and-digits/combined_folder/{train,test}/<class>/*.png
 
   2) CHoiCe-Dataset-main.zip
      - CHoiCe-Dataset-main/V0.3/label.txt
-     - CHoiCe-Dataset-main/V0.3/data-bin/<id_classe>/*.png
-       ou CHoiCe-Dataset-main/V0.3/data/<id_classe>/*.png
+     - CHoiCe-Dataset-main/V0.3/data-bin/<class_id>/*.png
+       or CHoiCe-Dataset-main/V0.3/data/<class_id>/*.png
 
-Sortie :
+Output:
   unified_dataset/
     images/
       train/<class_folder>/*.png
@@ -22,8 +22,8 @@ Sortie :
     summary_by_class.csv
     summary_by_split.csv
 
-Les images sont converties en niveaux de gris, fond blanc, caractère sombre,
-recadrées autour du caractère, paddées en carré puis redimensionnées.
+Images are converted to grayscale, white background with dark character,
+cropped around the character, padded to a square, then resized.
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ from PIL import Image, ImageOps
 
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".webp")
 
-# Ordre stable des classes : chiffres, minuscules, majuscules.
+# Stable class order: digits, lowercase, uppercase.
 CANONICAL_LABELS = (
     [str(i) for i in range(10)]
     + [chr(ord("a") + i) for i in range(26)]
@@ -68,8 +68,8 @@ class Sample:
 
 def safe_class_folder(label: str) -> str:
     """
-    Dossier compatible avec ImageFolder et les systèmes case-insensitive.
-    Exemple :
+    Returns an ImageFolder-compatible folder name, safe on case-insensitive filesystems.
+    Examples:
       label 'a' -> '010_a'
       label 'A' -> '036_A'
     """
@@ -78,11 +78,11 @@ def safe_class_folder(label: str) -> str:
 
 def normalize_archive_label(raw_label: str) -> Optional[str]:
     """
-    Le premier dataset utilise :
+    The first dataset uses:
       - '0'...'9'
       - 'a'...'z'
       - 'A_caps'...'Z_caps'
-    On convertit tout vers les labels canoniques :
+    Converts everything to canonical labels:
       - '0'...'9'
       - 'a'...'z'
       - 'A'...'Z'
@@ -105,23 +105,23 @@ def load_choice_labels(choice_zip: zipfile.ZipFile) -> List[str]:
         if name.endswith("V0.3/label.txt")
     ]
     if not candidates:
-        raise FileNotFoundError("Impossible de trouver V0.3/label.txt dans CHoiCe-Dataset-main.zip")
+        raise FileNotFoundError("Cannot find V0.3/label.txt in CHoiCe-Dataset-main.zip")
 
     labels = choice_zip.read(candidates[0]).decode("utf-8", errors="replace").splitlines()
     labels = [x.strip() for x in labels if x.strip() != ""]
 
     if len(labels) != 62:
-        raise ValueError(f"label.txt devrait contenir 62 labels, trouvé {len(labels)}")
+        raise ValueError(f"label.txt should contain 62 labels, found {len(labels)}")
 
     return labels
 
 
 def iter_archive_samples(archive_zip_path: Path) -> Iterable[Sample]:
     """
-    Lit les images du premier dataset directement depuis le ZIP.
-    On utilise à la fois :
-      - images augmentées
-      - images originales train/test
+    Reads images from the first dataset directly from the ZIP.
+    Uses both:
+      - augmented images
+      - original train/test images
     """
     with zipfile.ZipFile(archive_zip_path) as z:
         for inner_path in z.namelist():
@@ -132,7 +132,7 @@ def iter_archive_samples(archive_zip_path: Path) -> Iterable[Sample]:
             if len(parts) < 2:
                 continue
 
-            # La classe est le dossier juste avant le fichier.
+            # The class is the folder immediately above the file.
             raw_class = parts[-2]
             label = normalize_archive_label(raw_class)
             if label is None:
@@ -157,9 +157,9 @@ def iter_archive_samples(archive_zip_path: Path) -> Iterable[Sample]:
 
 def iter_choice_samples(choice_zip_path: Path, variant: str = "data-bin") -> Iterable[Sample]:
     """
-    Lit les images CHoiCe depuis le ZIP.
-    variant='data-bin' : images binarisées 28x28.
-    variant='data'     : images non binarisées 28x28.
+    Reads CHoiCe images from the ZIP.
+    variant='data-bin': binarized 28x28 images.
+    variant='data':     non-binarized 28x28 images.
     """
     assert variant in {"data-bin", "data"}
 
@@ -171,7 +171,7 @@ def iter_choice_samples(choice_zip_path: Path, variant: str = "data-bin") -> Ite
             if f"V0.3/{variant}/" in name
         ]
         if not prefix_candidates:
-            raise FileNotFoundError(f"Impossible de trouver V0.3/{variant}/ dans CHoiCe-Dataset-main.zip")
+            raise FileNotFoundError(f"Cannot find V0.3/{variant}/ in CHoiCe-Dataset-main.zip")
 
         for inner_path in z.namelist():
             if not inner_path.lower().endswith(IMAGE_EXTENSIONS):
@@ -208,7 +208,7 @@ def read_image_from_zip_handle(zip_handle: zipfile.ZipFile, inner_path: str) -> 
 
     image = Image.open(io.BytesIO(data))
 
-    # Si image RGBA, on compose sur fond blanc avant conversion.
+    # Composite RGBA images onto a white background before converting to grayscale.
     if image.mode in ("RGBA", "LA"):
         background = Image.new("RGBA", image.size, (255, 255, 255, 255))
         background.alpha_composite(image.convert("RGBA"))
@@ -219,9 +219,9 @@ def read_image_from_zip_handle(zip_handle: zipfile.ZipFile, inner_path: str) -> 
 
 def ensure_white_background(gray: Image.Image) -> Image.Image:
     """
-    Certains datasets ont caractère blanc sur fond noir.
-    On détecte le fond avec les pixels du bord et on inverse si nécessaire.
-    Objectif final : fond blanc, caractère sombre.
+    Some datasets use white characters on a black background.
+    Detects the background from border pixels and inverts if necessary.
+    Goal: white background with a dark character.
     """
     arr = np.asarray(gray)
 
@@ -238,7 +238,7 @@ def ensure_white_background(gray: Image.Image) -> Image.Image:
 
     background_median = float(np.median(border))
 
-    # Fond plutôt noir -> inversion.
+    # Dark background detected -> invert.
     if background_median < 128:
         gray = ImageOps.invert(gray)
 
@@ -247,8 +247,8 @@ def ensure_white_background(gray: Image.Image) -> Image.Image:
 
 def crop_to_character(gray: Image.Image, threshold: int = 245, margin_ratio: float = 0.20) -> Image.Image:
     """
-    Recadre autour des pixels sombres.
-    threshold=245 suppose qu'après normalisation le fond est proche de 255.
+    Crops tightly around dark pixels.
+    threshold=245 assumes that after normalisation the background is close to 255.
     """
     arr = np.asarray(gray)
 
@@ -288,12 +288,12 @@ def preprocess_image(
     margin_ratio: float = 0.20,
 ) -> Image.Image:
     """
-    Pipeline complet :
+    Full preprocessing pipeline:
       1. Grayscale
-      2. Fond blanc / trait sombre
-      3. Autocontrast léger
-      4. Crop autour du caractère
-      5. Pad carré
+      2. White background / dark stroke
+      3. Autocontrast
+      4. Crop around the character
+      5. Square padding
       6. Resize
     """
     gray = image.convert("L")
@@ -319,7 +319,7 @@ def stratified_split(
     seed: int,
 ) -> Dict[Sample, str]:
     if abs((train_ratio + val_ratio + test_ratio) - 1.0) > 1e-8:
-        raise ValueError("train_ratio + val_ratio + test_ratio doit être égal à 1.")
+        raise ValueError("train_ratio + val_ratio + test_ratio must equal 1.")
 
     rng = random.Random(seed)
     by_label: Dict[str, List[Sample]] = defaultdict(list)
@@ -336,7 +336,7 @@ def stratified_split(
         n_train = int(round(n * train_ratio))
         n_val = int(round(n * val_ratio))
 
-        # Correction pour éviter dépassement dû aux arrondis.
+        # Rounding correction: ensure train + val does not exceed total.
         if n_train + n_val > n:
             n_val = max(0, n - n_train)
 
@@ -378,9 +378,9 @@ def build_dataset(
     output_dir = output_dir.resolve()
 
     if not archive_zip_path.exists():
-        raise FileNotFoundError(f"Fichier introuvable : {archive_zip_path}")
+        raise FileNotFoundError(f"File not found: {archive_zip_path}")
     if not choice_zip_path.exists():
-        raise FileNotFoundError(f"Fichier introuvable : {choice_zip_path}")
+        raise FileNotFoundError(f"File not found: {choice_zip_path}")
 
     if clean_output and output_dir.exists():
         shutil.rmtree(output_dir)
@@ -394,11 +394,11 @@ def build_dataset(
         samples.extend(iter_archive_samples(zip_path))
         samples.extend(iter_choice_samples(choice_zip_path, variant=choice_variant))
 
-    # Garde uniquement les labels canoniques.
+    # Keep only canonical labels.
     samples = [s for s in samples if s.label in LABEL_TO_ID]
 
     if not samples:
-        raise RuntimeError("Aucune image trouvée. Vérifie les chemins des ZIPs.")
+        raise RuntimeError("No images found. Check the ZIP file paths.")
 
     sample_to_split = stratified_split(
         samples=samples,
@@ -412,7 +412,7 @@ def build_dataset(
     errors: List[dict] = []
 
     total = len(samples)
-    print(f"Nombre total d'images détectées : {total}")
+    print(f"Total images detected: {total}")
 
     zip_handles = {
         archive_zip_path: zipfile.ZipFile(archive_zip_path),
@@ -455,12 +455,12 @@ def build_dataset(
             })
 
             if idx % 1000 == 0 or idx == total:
-                print(f"Traitement : {idx}/{total}")
+                print(f"Processing: {idx}/{total}")
     finally:
         for handle in zip_handles.values():
             handle.close()
 
-    # Fichier principal labels.csv
+    # Main labels.csv file
     write_csv(
         output_dir / "labels.csv",
         metadata_rows,
@@ -470,7 +470,7 @@ def build_dataset(
         ],
     )
 
-    # Mapping classes
+    # Class mapping
     classes = [
         {
             "label_id": idx,
@@ -482,7 +482,7 @@ def build_dataset(
     with (output_dir / "classes.json").open("w", encoding="utf-8") as f:
         json.dump(classes, f, indent=2, ensure_ascii=False)
 
-    # Résumés
+    # Summaries
     by_class = Counter(row["label"] for row in metadata_rows)
     summary_by_class = [
         {
@@ -517,48 +517,47 @@ def build_dataset(
             fieldnames=["zip", "inner_path", "label", "source", "error"],
         )
 
-    print("\nDataset créé avec succès.")
-    print(f"Dossier de sortie : {output_dir}")
-    print(f"Images sauvegardées : {len(metadata_rows)}")
-    print(f"Erreurs : {len(errors)}")
-    print("Répartition split :", dict(by_split))
+    print("\nDataset created successfully.")
+    print(f"Output directory: {output_dir}")
+    print(f"Images saved    : {len(metadata_rows)}")
+    print(f"Errors          : {len(errors)}")
+    print("Split breakdown :", dict(by_split))
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Créer un dataset unifié pour caractères manuscrits."
+        description="Create a unified dataset for handwritten characters."
     )
     parser.add_argument(
         "--archive_zip",
         type=Path,
         required=True,
-        help="Chemin vers archive (1)(1).zip",
+        help="Path to archive (1)(1).zip",
     )
     parser.add_argument(
         "--choice_zip",
         type=Path,
         required=True,
-        help="Chemin vers CHoiCe-Dataset-main.zip",
+        help="Path to CHoiCe-Dataset-main.zip",
     )
-    
     parser.add_argument(
-    "--archive_zips",
-    type=Path,
-    nargs="+",
-    default=[],
-    help="Un ou plusieurs ZIPs avec la structure archive"
+        "--archive_zips",
+        type=Path,
+        nargs="+",
+        default=[],
+        help="One or more ZIPs with the archive dataset structure",
     )
     parser.add_argument(
         "--output_dir",
         type=Path,
         default=Path("unified_dataset"),
-        help="Dossier de sortie",
+        help="Output directory",
     )
     parser.add_argument(
         "--image_size",
         type=int,
         default=64,
-        help="Taille finale des images : image_size x image_size",
+        help="Final image size: image_size x image_size",
     )
     parser.add_argument("--train_ratio", type=float, default=0.80)
     parser.add_argument("--val_ratio", type=float, default=0.10)
@@ -568,12 +567,12 @@ def parse_args() -> argparse.Namespace:
         "--choice_variant",
         choices=["data-bin", "data"],
         default="data-bin",
-        help="Version CHoiCe à utiliser. data-bin est recommandée pour commencer.",
+        help="CHoiCe variant to use. data-bin is recommended as a starting point.",
     )
     parser.add_argument(
         "--no_clean_output",
         action="store_true",
-        help="Ne supprime pas le dossier de sortie s'il existe déjà.",
+        help="Do not delete the output directory if it already exists.",
     )
     return parser.parse_args()
 

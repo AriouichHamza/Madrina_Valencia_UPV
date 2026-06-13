@@ -1,6 +1,8 @@
 const mysql = require('mysql2');
 require('dotenv').config();
 
+// Connection pool — all database variables come from environment variables or
+// fall back to safe defaults.
 const pool = mysql.createPool({
   host: process.env.DB_HOST || '127.0.0.1',
   user: process.env.DB_USER || 'root',
@@ -10,20 +12,21 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: Number(process.env.DB_CONNECTION_LIMIT || 10),
 });
-  
+
 pool.on('connection', (stream) => {
-  console.log('open pool', new Date());
+  console.log('Pool connection opened', new Date());
 })
 
 pool.on('error', (err) => {
   if (err.code == 'PROTOCOL_CONNECTION_LOST') {
-    console.log('\n\x1b[31mPROTOCOL_CONNECTION_LOST\nPéridida de conexión en la base de datos\x1b[0m');
+    console.log('\n\x1b[31mPROTOCOL_CONNECTION_LOST\nDatabase connection was lost\x1b[0m');
   } else {
-    console.log('\n\x1b[33merror en la conexión de la base de datos\x1b[0m');
+    console.log('\n\x1b[33mDatabase connection error\x1b[0m');
   }
-  console.log('Desconectado', new Date());
+  console.log('Disconnected', new Date());
 });
 
+// Runs a lightweight SELECT 1 to verify the pool can reach the database.
 const isConnected = (callback) => {
   let sql = 'SELECT 1';
   let options = undefined;
@@ -41,28 +44,24 @@ const isConnected = (callback) => {
 }
 
 const query = (sql, options, callback) => {
-
   pool.getConnection(function (err, conn) {
     if (err) {
       callback(err, null, null);
     } else {
       conn.query(sql, options, function (err, results, fields) {
-        // Devolución de llamada impulsada por eventos
+        // Event-driven callback — release the connection here, not inside the query callback.
         callback(err, results, fields);
       });
-      // Liberar la conexión, debe tenerse en cuenta que la liberación de la conexión debe liberarse aquí, no en la devolución de llamada de consulta
       conn.release();
     }
   });
 };
 
 const syncQuery = async (sql, options) => {
-
-  // now get a Promise wrapped instance of that pool
+  // Get a Promise-wrapped instance of the pool.
   const promisePool = pool.promise();
-  // query database using promises
   try {
-    const [rows, fields] = await promisePool.query(sql, options); 
+    const [rows, fields] = await promisePool.query(sql, options);
     return rows;
   } catch (err) {
     return undefined;

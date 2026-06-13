@@ -13,6 +13,7 @@ const PUBLIC = 'public';
 const USER_DATA = 'user_data';
 const os = require("os");
 
+// Python binary and AI module paths — configurable via environment variables.
 const AI_PYTHON_BIN = process.env.AI_PYTHON_BIN ||
   path.resolve(__dirname, '..', '..', '.venv', 'bin', 'python');
 const AI_MODULE_PATH = process.env.AI_MODULE_PATH ||
@@ -24,6 +25,8 @@ const AI_MODULE_USER_DATA_ROOT = process.env.AI_MODULE_USER_DATA_ROOT ||
 // upload socket and the exam page socket from starting the same OCR job twice.
 const childProcesses = new Map();
 
+// Emits a prediction message to all sockets subscribed to a job and caches
+// the last message so late-joining sockets can catch up immediately.
 function emitPrediction(job, message) {
   job.lastMessage = message;
   for (const subscriber of job.sockets) {
@@ -31,6 +34,8 @@ function emitPrediction(job, message) {
   }
 }
 
+// Resolves the PDF filename (without extension) inside an exam directory.
+// Falls back to the only PDF present when the requested name cannot be found.
 function resolvePdfName(index, requestedName) {
   const examDir = path.join(AI_MODULE_USER_DATA_ROOT, index);
   if (!fs.existsSync(examDir)) {
@@ -62,6 +67,8 @@ function resolvePdfName(index, requestedName) {
   );
 }
 
+// Converts a range of PDF pages to JPEG images using pdftoppm.
+// Pages are processed in batches of 50 to avoid shell argument limits.
 async function pdftoppm(read, write, pages, socket, idExam) {
 
   return new Promise((resolve, reject) => {
@@ -88,6 +95,7 @@ async function pdftoppm(read, write, pages, socket, idExam) {
   });
 }
 
+// Merges all PDF files found in readdir into a single output file using pdfunite.
 async function pdfunite(readdir, writefile) {
 
   return new Promise((resolve, reject) => {
@@ -108,6 +116,7 @@ async function pdfunite(readdir, writefile) {
 
 }
 
+// Converts all PDF files in readdir to PDF/A using ps2pdf.
 async function ps2pdf(readdir, socket, idExam) {
 
   return new Promise((resolve, reject) => {
@@ -131,6 +140,8 @@ async function ps2pdf(readdir, socket, idExam) {
   });
 }
 
+// Removes files from readdir that either start with "ps2pdf-" (startsWith=true)
+// or do not start with "ps2pdf-" (startsWith=false), used to clean up temporary files.
 async function ps2pdfRemoveFiles(startsWith, readdir) {
 
   return new Promise((resolve, reject) => {
@@ -157,6 +168,7 @@ async function ps2pdfRemoveFiles(startsWith, readdir) {
 
 }
 
+// Builds the pdftoppm command for a specific page range and output resolution.
 function pdftoppmCommand(read, s, f, write) {
   let x = 1240;
   let y = 1750;
@@ -165,7 +177,7 @@ function pdftoppmCommand(read, s, f, write) {
   return `pdftoppm -jpeg -f ${s} -l ${f} -r ${dpi} -scale-to-x ${x} -scale-to-y ${y} "${read}" "${write}"`;
 }
 
-//Windows & MacOs
+// Windows & macOS alternative: pdf-poppler (commented out — Linux path is used).
 //var pdfPoppler = require('pdf-poppler');
 
 const connection = async (socket) => {
@@ -174,6 +186,8 @@ const connection = async (socket) => {
 
   let fileBuffer = [];
 
+  // insert-alumno — inserts a student record and echoes back the subject id and
+  // index so the frontend can update the correct row.
   socket.on('insert-alumno', (data) => {
     let args = [data.apellidos.trim(), data.asignatura, data.dni.trim(), data.nombre.trim()];
     let sql = 'INSERT INTO alumnos (apellidos, asignatura, dni, nombre) VALUES (?, ?, ?, ?)';
@@ -186,6 +200,9 @@ const connection = async (socket) => {
     });
   });
 
+  // insert-examen — receives a chunked base64-encoded PDF upload.
+  // Operations: 'new-file' opens a buffer slot, the default case appends chunks,
+  // and 'fin-file' writes the file to disk and triggers the processing pipeline.
   socket.on('insert-examen', (data) => {
 
     let idUsuario = data.usuario;
@@ -197,7 +214,7 @@ const connection = async (socket) => {
 
     let index = idUsuario + '-' + idAsig + '-' + idExam;
 
-
+    // Windows / macOS path: use pdf-poppler to convert pages to images.
     function createImgsWin(dir, fileName) {
 
       const convertImgSync = async (dir, fileName) => {
@@ -231,20 +248,23 @@ const connection = async (socket) => {
 
     }
 
+    // Cleans up the exam directory and database row on any pipeline failure.
     async function insertExamenError(message) {
       console.error(message);
 
       let dir = path.join(__dirname, '..', USER_DATA, index);
       fs.rm(dir, { recursive: true }, (err) => {
-        if (err) { console.error('No se ha podido borrar la carpeta ' + index); }
+        if (err) { console.error('Could not delete folder ' + index); }
       });
 
       db.query('DELETE FROM examenes WHERE id = ?', [idExam], (er, result, fields) => {
-        if (er) { console.error('No se ha podido borrar de la base de datos el examen ' + index); }
+        if (er) { console.error('Could not delete exam from database: ' + index); }
         socket.emit('insert-examen-error', { idExam: idExam, message: 'Error al procesar el examen' });
       });
     }
 
+    // Called once all chunks of a file group are received.
+    // Runs the ps2pdf → pdfunite → pdftoppm pipeline then enables the exam.
     async function mergeFiles(baseName, baseIndex, cant) {
 
       for (let i = 0; i < cant; i++) {
@@ -256,7 +276,6 @@ const connection = async (socket) => {
       let readdir = path.join(__dirname, '..', USER_DATA, index);
       let writefile = path.join(readdir, baseName);
 
-      //esto puede que se pueda eliminar
       let done = await ps2pdf(readdir, socket, idExam);
       if (!done) { insertExamenError('ps2pdf'); return; }
 
@@ -293,10 +312,11 @@ const connection = async (socket) => {
         let args = [0, idExam];
         db.query(sql, args, (er, result, fields) => {
           if (er) {
-            console.error('Error al actualizar el examen ' + index);
+            console.error('Error updating exam ' + index);
             socket.emit('insert-examen-error', { idExam: idExam, message: 'Error al procesar el examen' });
           } else {
             socket.emit('insert-examen-listo', { idExam: idExam });
+            // If the exam is configured for AI-assisted grading, start the prediction immediately.
             db.syncQuery('SELECT isAvanzado FROM examenes WHERE id = ?', [idExam])
               .then(rows => {
                 if (rows && rows.length === 1 && Number(rows[0].isAvanzado) === 1) {
@@ -354,7 +374,9 @@ const connection = async (socket) => {
         break;
     }
   });
-  //Devuelve las imagenes de un examen dados los id de usuario, asignatura y examen
+
+  // select-examen-imgs — reads all JPEG images from the exam directory and
+  // streams them back to the client in 256 KB chunks.
   socket.on('select-examen-imgs', (data) => {
 
     let idUsuario = data.usuario;
@@ -362,6 +384,7 @@ const connection = async (socket) => {
     let idExam = data.examen;
     let index = idUsuario + '-' + idAsig + '-' + idExam;
 
+    // Splits a base64 string into chunks of at most 256 KB.
     function splitString(base64) {
 
       const length = 1024 * 256;
@@ -397,11 +420,14 @@ const connection = async (socket) => {
         socket.emit('select-examen-imgs', 'fin-imgs');
       };
     });
-    //Evento que indica que se han enviado todas las imagenes
+    // Signal that all images have been sent.
     socket.emit('select-examen-imgs', 'fin-all');
 
   });
 
+  // select-examen-zip — builds the downloadable ZIP for an exam:
+  // extracts individual student PDFs with pdfseparate/pdfunite and writes two
+  // CSV files (detailed results and a Padrino-compatible grade list).
   socket.on('select-examen-zip', async (data) => {
 
     let examen = { nombre: '', fecha: 0 };
@@ -429,6 +455,7 @@ const connection = async (socket) => {
     let progressTotal = 0;
     let progress = 0;
 
+    // Strips the check letter from a DNI/NIF so only the numeric part is exported.
     function dniWithoutCheckLetter(value) {
       const dni = String(value || '').trim().toUpperCase();
 
@@ -439,6 +466,7 @@ const connection = async (socket) => {
       return dni;
     }
 
+    // Creates the ZIP archive once all individual PDFs and CSVs have been written.
     function writeZIP() {
 
       if (progress < progressTotal) {
@@ -483,6 +511,7 @@ const connection = async (socket) => {
       archive.finalize();
     }
 
+    // Writes two CSV files: a detailed results file and a Padrino-compatible grade file.
     function writeCSV(calificados) {
 
       let csvInfo = 'ID estudiante;Apellidos;Nombre;Nota;Inicio;Fin\n';
@@ -505,86 +534,90 @@ const connection = async (socket) => {
       progress++;
       writeZIP();
     }
-  function writePDF(calificados) {
-    let sinNombre = 0;
 
-    const userHomeDir = os.homedir();
-    const scanBat = path.join(userHomeDir, 'exam_scan', 'sube.bat');
-    const destBat = path.join(dirExamenes, 'sube.bat');
+    // Extracts each student's pages from the merged PDF using pdfseparate + pdfunite
+    // and writes one PDF file per student.
+    function writePDF(calificados) {
+      let sinNombre = 0;
 
-    console.log('scanBat: %s destBat: %s', scanBat, destBat);
+      const userHomeDir = os.homedir();
+      const scanBat = path.join(userHomeDir, 'exam_scan', 'sube.bat');
+      const destBat = path.join(dirExamenes, 'sube.bat');
 
-    // Copier sube.bat seulement s'il existe
-    if (fs.existsSync(scanBat)) {
-      fs.copyFileSync(scanBat, destBat);
-    } else {
-      console.log('sube.bat absent, copie ignorée');
-    }
+      console.log('scanBat: %s destBat: %s', scanBat, destBat);
 
-    calificados.forEach(c => {
-      let filename = '';
-      const exportedDni = dniWithoutCheckLetter(c.dni);
-
-      if (exportedDni.length > 0) {
-        let alumnoDNI = exportedDni;
-        let examenNombre = examen.nombre.replace(/ /g, '_');
-        let alumnoNombre = (
-          c.nombre.replace(/ /g, '_') +
-          '_' +
-          c.apellidos.replace(/ /g, '_')
-        )
-          .toLowerCase()
-          .normalize("NFD")
-          .replace(/\p{Diacritic}/gu, "");
-
-        filename = `${alumnoDNI}_${examenNombre}_${alumnoNombre}.pdf`;
+      // Copy sube.bat only if it exists on this machine.
+      if (fs.existsSync(scanBat)) {
+        fs.copyFileSync(scanBat, destBat);
       } else {
-        filename = 'XXXXXXXXX_Sin_nombre_' + (++sinNombre) + '.pdf';
+        console.log('sube.bat not found, skipping copy');
       }
 
-      const writePath = path.join(dirExamenes, filename);
-      const readPath = path.join(dirPrivate, examen.nombre.replace(/ /g, '_') + '.pdf');
-      const firstPage = Number(c.ini);
-      const lastPage = Number(c.fin);
-      const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'madrina-pages-'));
-      const pagePattern = path.join(temporaryDirectory, 'page-%d.pdf');
+      calificados.forEach(c => {
+        let filename = '';
+        const exportedDni = dniWithoutCheckLetter(c.dni);
 
-      try {
-        if (!Number.isInteger(firstPage) || !Number.isInteger(lastPage) ||
-            firstPage < 1 || lastPage < firstPage) {
-          throw new Error(`Invalid page range: ${c.ini}-${c.fin}`);
+        if (exportedDni.length > 0) {
+          let alumnoDNI = exportedDni;
+          let examenNombre = examen.nombre.replace(/ /g, '_');
+          let alumnoNombre = (
+            c.nombre.replace(/ /g, '_') +
+            '_' +
+            c.apellidos.replace(/ /g, '_')
+          )
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/\p{Diacritic}/gu, "");
+
+          filename = `${alumnoDNI}_${examenNombre}_${alumnoNombre}.pdf`;
+        } else {
+          filename = 'XXXXXXXXX_Sin_nombre_' + (++sinNombre) + '.pdf';
         }
 
-        execFileSync('pdfseparate', [
-          '-f', String(firstPage),
-          '-l', String(lastPage),
-          readPath,
-          pagePattern,
-        ], { stdio: 'ignore' });
+        const writePath = path.join(dirExamenes, filename);
+        const readPath = path.join(dirPrivate, examen.nombre.replace(/ /g, '_') + '.pdf');
+        const firstPage = Number(c.ini);
+        const lastPage = Number(c.fin);
+        // Use a temporary directory to avoid page-file collisions across students.
+        const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'madrina-pages-'));
+        const pagePattern = path.join(temporaryDirectory, 'page-%d.pdf');
 
-        const pageFiles = fs.readdirSync(temporaryDirectory)
-          .filter(file => /^page-\d+\.pdf$/.test(file))
-          .sort((a, b) => {
-            const pageA = Number(a.match(/\d+/)[0]);
-            const pageB = Number(b.match(/\d+/)[0]);
-            return pageA - pageB;
-          })
-          .map(file => path.join(temporaryDirectory, file));
+        try {
+          if (!Number.isInteger(firstPage) || !Number.isInteger(lastPage) ||
+              firstPage < 1 || lastPage < firstPage) {
+            throw new Error(`Invalid page range: ${c.ini}-${c.fin}`);
+          }
 
-        if (pageFiles.length === 0) {
-          throw new Error(`No page extracted for range ${firstPage}-${lastPage}`);
+          execFileSync('pdfseparate', [
+            '-f', String(firstPage),
+            '-l', String(lastPage),
+            readPath,
+            pagePattern,
+          ], { stdio: 'ignore' });
+
+          const pageFiles = fs.readdirSync(temporaryDirectory)
+            .filter(file => /^page-\d+\.pdf$/.test(file))
+            .sort((a, b) => {
+              const pageA = Number(a.match(/\d+/)[0]);
+              const pageB = Number(b.match(/\d+/)[0]);
+              return pageA - pageB;
+            })
+            .map(file => path.join(temporaryDirectory, file));
+
+          if (pageFiles.length === 0) {
+            throw new Error(`No page extracted for range ${firstPage}-${lastPage}`);
+          }
+
+          execFileSync('pdfunite', [...pageFiles, writePath], { stdio: 'ignore' });
+        } catch (err) {
+          console.error('writePDF/poppler error:', err.message);
+        } finally {
+          fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+          progress++;
+          writeZIP();
         }
-
-        execFileSync('pdfunite', [...pageFiles, writePath], { stdio: 'ignore' });
-      } catch (err) {
-        console.error('Erreur writePDF/poppler:', err.message);
-      } finally {
-        fs.rmSync(temporaryDirectory, { recursive: true, force: true });
-        progress++;
-        writeZIP();
-      }
-    });
-  }
+      });
+    }
 
       let sql = 'SELECT * FROM calificados WHERE examen = ?';
       db.query(sql, [idExam], (er, result, fields) => {
@@ -594,6 +627,9 @@ const connection = async (socket) => {
       });
     });
 
+  // Spawns the Python AI process for a given exam index.
+  // If a job is already running for that index, the socket is subscribed to it
+  // instead of starting a second process.
   async function spawnPrediction(index, requestedPdfName, socket) {
     const runningJob = childProcesses.get(index);
     if (runningJob) {
@@ -635,6 +671,8 @@ const connection = async (socket) => {
       emitPrediction(job, `error ${message}`);
     };
 
+    // Parses a single stdout line from the AI process and routes it to the
+    // appropriate handler (progress update, new result, completion, or error).
     const processLine = (rawLine) => {
       const element = rawLine.trim();
       if (!element) return;
@@ -649,6 +687,7 @@ const connection = async (socket) => {
           const progress = Number(progressParts[0]);
           const state = progressParts.slice(1).join(' ').trim();
 
+          // Only forward progress events that move forward to avoid redundant updates.
           if (state === 'Buscando DNIs en páginas' && progress > progressFindStructure) {
             progressFindStructure = progress;
             emitPrediction(job, element);
@@ -669,6 +708,7 @@ const connection = async (socket) => {
           break;
         case 'done':
           if (!job.finalizing && !job.failed) {
+            // Save all predictions to the database before emitting the done event.
             job.finalizing = (async () => {
               await Promise.all(
                 job.predictions.map(alumno => DAL.insertAlumnoCalificado(alumno, false))
@@ -706,6 +746,7 @@ const connection = async (socket) => {
       });
       job.child = child;
 
+      // Buffer stdout and split on newlines so partial lines are not processed early.
       let stdoutBuffer = '';
       child.stdout.on('data', (data) => {
         stdoutBuffer += data.toString('utf-8');
@@ -714,6 +755,7 @@ const connection = async (socket) => {
         lines.forEach(processLine);
       });
 
+      // Keep the last 8 KB of stderr for error reporting.
       child.stderr.on('data', (data) => {
         const message = data.toString('utf-8');
         job.stderr = (job.stderr + message).slice(-8000);
@@ -743,6 +785,7 @@ const connection = async (socket) => {
     }
   }
 
+  // examen-predict — triggers the AI prediction pipeline for an exam.
   socket.on('examen-predict', async (data) => {
     let usuario = data.usuario;
     let asignatura = data.asignatura;
@@ -753,6 +796,7 @@ const connection = async (socket) => {
     spawnPrediction(index, asignaturaNom, socket);
   });
 
+  // examen-predict-kill — sends SIGTERM to a running AI process.
   socket.on('examen-predict-kill', (data) => {
     const index = `${data.usuario}-${data.asignatura}-${data.examen}`;
     const job = childProcesses.get(index);
@@ -765,9 +809,9 @@ const connection = async (socket) => {
 
 }
 
-
 const use = (server) => {
 
+  // 5-minute ping timeout to accommodate long AI processing and large PDF uploads.
   let pingTimeout = 5 * 60 * 1000;
 
   console.log('socket - pingTimeout:', pingTimeout);

@@ -32,7 +32,7 @@ def choose_device(requested: str) -> torch.device:
 
     if requested == "cuda":
         if not torch.cuda.is_available():
-            raise RuntimeError("CUDA demandé mais non disponible. Lance avec --device cpu.")
+            raise RuntimeError("CUDA requested but not available. Run with --device cpu.")
         return torch.device("cuda")
 
     try:
@@ -41,7 +41,7 @@ def choose_device(requested: str) -> torch.device:
             torch.zeros(1).to(device)
             return device
     except Exception as exc:
-        print(f"[WARN] CUDA indisponible, fallback CPU : {exc}")
+        print(f"[WARN] CUDA unavailable, falling back to CPU: {exc}")
 
     return torch.device("cpu")
 
@@ -66,7 +66,7 @@ def make_weighted_sampler(dataset):
     )
     
 def display_label(class_name: str) -> str:
-    # Exemple : "000_0" -> "0", "036_A" -> "A"
+    # e.g. "000_0" -> "0", "036_A" -> "A"
     if "_" in class_name and class_name.split("_", 1)[0].isdigit():
         return class_name.split("_", 1)[1]
     return class_name
@@ -108,7 +108,7 @@ def write_history_row(path: Path, row: dict, write_header: bool) -> None:
         
         
 def ensure_white_background(gray: Image.Image) -> Image.Image:
-    """Objectif final : fond blanc, caractère sombre."""
+    """Ensure white background with dark character (invert if needed)."""
     arr = np.asarray(gray)
     if arr.size == 0:
         return gray
@@ -123,7 +123,7 @@ def ensure_white_background(gray: Image.Image) -> Image.Image:
 
     background_median = float(np.median(border))
 
-    # Si le fond est noir, on inverse pour obtenir fond blanc + écriture sombre.
+    # Invert if background is dark so we always have white background with dark strokes.
     if background_median < 128:
         gray = ImageOps.invert(gray)
 
@@ -183,7 +183,7 @@ def resolve_images(patterns: Sequence[str]) -> List[Path]:
         if p.exists() and p.is_file():
             valid.append(p)
         else:
-            print(f"[WARN] Image introuvable ignorée: {p}")
+            print(f"[WARN] Image not found, skipping: {p}")
     return valid
 
 
@@ -195,13 +195,13 @@ def image_to_tensor(image_path: Path, image_size: int) -> torch.Tensor:
     arr = np.asarray(processed).astype(np.float32) / 255.0
     tensor = torch.from_numpy(arr).unsqueeze(0)  # [1, H, W]
 
-    # Même normalisation que train_cnn_example.py : Normalize(mean=[0.5], std=[0.5])
+    # Same normalisation as the training pipeline: Normalize(mean=[0.5], std=[0.5]).
     tensor = (tensor - 0.5) / 0.5
     return tensor
 
 
 def display_label(class_name: str) -> str:
-    # Exemple: "000_0" -> "0", "036_A" -> "A"
+    # e.g. "000_0" -> "0", "036_A" -> "A"
     if "_" in class_name and class_name.split("_", 1)[0].isdigit():
         return class_name.split("_", 1)[1]
     return class_name
@@ -214,7 +214,7 @@ def load_model(checkpoint_path: Path, device: torch.device):
         state_dict = checkpoint["model_state_dict"]
         classes = checkpoint.get("classes", FALLBACK_CLASSES)
     else:
-        # Cas où torch.save(model.state_dict(), path) a été utilisé.
+        # Fallback for checkpoints saved with torch.save(model.state_dict(), path) directly.
         state_dict = checkpoint
         classes = FALLBACK_CLASSES
 
@@ -283,7 +283,7 @@ def save_preprocessed_images(image_paths: List[Path], output_dir: Path, image_si
 
 
 def print_results(rows):
-    print("\nRésultats de prédiction")
+    print("\nPrediction results")
     print("-" * 100)
     print(f"{'image':45s} | {'pred':6s} | {'conf':8s} | top")
     print("-" * 100)

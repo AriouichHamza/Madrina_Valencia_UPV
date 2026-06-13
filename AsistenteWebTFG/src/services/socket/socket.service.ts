@@ -97,7 +97,7 @@ export class SocketService {
     return this.socket.fromEvent('insert-examen-error').pipe( map( (data) => { return <any>data; } ) );
   }
   //----------------------------------------------------------------------------
-  //Nuevo Jefferson
+  // Added by Jefferson
   insertExamenPrediction(examen:any) {
     this.socket.emit('examen-predict', examen);
   }

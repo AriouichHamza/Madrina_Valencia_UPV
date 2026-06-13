@@ -10,8 +10,8 @@ import os
 
 emitter = Emitter()
 
-#--------------------------------------------------------
-# REMPLACEMENT de buscar_inicio_copias()
+# --------------------------------------------------------
+# Replaces buscar_inicio_copias()
 # --------------------------------------------------------
 
 
@@ -34,8 +34,7 @@ def buscar_inicio_copias(pages, nbp):
             anchor_rect = detection["anchor_rect_xyxy"]
             pagesConfirmed.append([anchor_rect, page])
 
-            # IMPORTANT: on garde page-XX.png
-            # car la suite peut relancer la detection
+            # Keep page-XX.png — the next detection pass may read it again.
         else:
             pathToCalificacion = build_dump_path("calification", page)
             if os.path.exists(pathToCalificacion):
@@ -48,10 +47,7 @@ def rect_center(rect):
     return (x + w / 2.0, y + h / 2.0)
 
 def support_line_below(binary_img, digit_rects):
-    """
-    Vérifie qu'il existe une longue ligne horizontale sous la rangée du DNI.
-    C'est un indice fort d'une vraie première page.
-    """
+    """Checks for a long horizontal line below the DNI row — a strong indicator of a first page."""
     if len(digit_rects) < 7:
         return 0.0
 
@@ -75,15 +71,12 @@ def support_line_below(binary_img, digit_rects):
     if roi.size == 0:
         return 0.0
 
-    # taux de pixels allumés par ligne
+    # lit-pixel ratio per row
     row_fill = np.mean(roi > 0, axis=1)
     return float(np.max(row_fill))
 
 def score_digit_row_for_page(window, binary_img):
-    """
-    Score recall pour décider si une page est probablement une première page.
-    Ici on privilégie le rappel.
-    """
+    """Recall-oriented score used to decide whether a page is likely a first page."""
     n = len(window)
     if n < 7:
         return -1e9
@@ -129,9 +122,7 @@ def score_digit_row_for_page(window, binary_img):
     )
     
 def find_best_digit_sequence_for_page(rows, binary_img):
-    """
-    Cherche la meilleure suite de 7 à 9 boxes pour le rappel.
-    """
+    """Searches for the best 7-to-9 box sequence, optimising for recall."""
     best = None
     best_score = -1e9
 
@@ -161,10 +152,10 @@ def find_best_digit_sequence_for_page(rows, binary_img):
 
 def _pad_digit_boxes_to_9(digit_boxes):
     """
-    Garantit 9 boxes.
-    - 9 -> inchangé
-    - 8 -> extrapole la 9e
-    - <8 -> retourne tel quel
+    Ensures exactly 9 boxes:
+    - 9 boxes: unchanged
+    - 8 boxes: extrapolates the 9th
+    - <8 boxes: returned as-is
     """
     digit_boxes = list(digit_boxes)
 
@@ -198,7 +189,7 @@ def _coords_from_digit_boxes(digit_boxes):
     if len(digit_boxes) < 8:
         return None
 
-    # si on n'a que 8 boxes après padding raté, on duplique la dernière
+    # if still short after padding, duplicate the last box to fill to 9
     while len(digit_boxes) < 9:
         digit_boxes.append(digit_boxes[-1])
 
@@ -213,10 +204,7 @@ def _coords_from_digit_boxes(digit_boxes):
 
 
 def _synthetic_boxes_from_anchor(anchor_rect_xyxy):
-    """
-    Dernier fallback si aucune detection de boxes n'est dispo.
-    Reconstruit 9 boxes a droite de l'ancre.
-    """
+    """Last fallback: reconstructs 9 boxes to the right of the anchor when no detection is available."""
     ax0, ay0, ax1, ay1 = anchor_rect_xyxy
     anchor_w = max(10, ax1 - ax0)
     anchor_h = max(10, ay1 - ay0)
