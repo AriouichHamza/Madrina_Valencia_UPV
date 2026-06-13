@@ -655,6 +655,15 @@ export class ExamenAdvancedComponent implements OnInit, AfterContentChecked {
           this.loading = false;
           this.getExamenAlumnos();
           break;
+        case 'error':
+          this.loading = false;
+          this.loadingState = data;
+          this.snackBar.open(data, 'OK', {
+            duration: 10000,
+            horizontalPosition: 'center',
+            verticalPosition: 'top',
+          });
+          break;
       }
     }
     );

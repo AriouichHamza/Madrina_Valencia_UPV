@@ -1,0 +1,75 @@
+services:
+
+  # ── Local MySQL database (disable if using an external database) ───────────
+  # To use an external database: comment out this entire "db" block and update
+  # the DB_* variables in the backend service below.
+  db:
+    image: mysql:8.0
+    container_name: madrina_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: MargotDB_2024
+      MYSQL_DATABASE: MargotDB
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./MargotDB.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pMargotDB_2024"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Node.js backend + Python AI module ────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: madrina_backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # ── Local Docker database (default) ────────────────────────────────────
+      DB_HOST: db
+      DB_USER: root
+      DB_PASSWORD: MargotDB_2024
+      DB_NAME: MargotDB
+      DB_PORT: 3306
+      # ── External database: replace the values above with your server's
+      # DB_HOST: my-server.example.com   # IP or domain name
+      # DB_USER: my_user
+      # DB_PASSWORD: my_password
+      # DB_NAME: my_database
+      # DB_PORT: 3306
+      PORT: 3000
+      AI_PYTHON_BIN: /app/.venv/bin/python
+      AI_MODULE_PATH: /app/AsistenteWebTFGBackendAIModule/main.py
+      AI_MODULE_USER_DATA_ROOT: /app/AsistenteWebTFGBackend/user_data
+      AI_PDF_WORKERS: 2
+      AI_DETECTION_WORKERS: 2
+      OMP_NUM_THREADS: 1
+      MKL_NUM_THREADS: 1
+      PYTHONUNBUFFERED: 1
+    ports:
+      - "3000:3000"
+    volumes:
+      - backend_public:/app/AsistenteWebTFGBackend/public
+      - backend_user_data:/app/AsistenteWebTFGBackend/user_data
+
+  # ── Angular frontend (served by Nginx) ────────────────────────────────────
+  frontend:
+    build:
+      context: ./AsistenteWebTFG
+      dockerfile: Dockerfile
+    container_name: madrina_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "4200:80"
+
+volumes:
+  db_data:
+  backend_public:
+  backend_user_data:

@@ -1,16 +1,16 @@
 const mysql = require('mysql2');
-//Importar -env
 require('dotenv').config();
 
 const pool = mysql.createPool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  port: '3306',
+  host: process.env.DB_HOST || '127.0.0.1',
+  user: process.env.DB_USER || 'root',
+  port: Number(process.env.DB_PORT || 3306),
   password: process.env.DB_PASSWORD,
-  database: 'MargotDB',
-  waitForConnections: true
+  database: process.env.DB_NAME || 'MargotDB',
+  waitForConnections: true,
+  connectionLimit: Number(process.env.DB_CONNECTION_LIMIT || 10),
 });
-
+  
 pool.on('connection', (stream) => {
   console.log('open pool', new Date());
 })
@@ -29,13 +29,13 @@ const isConnected = (callback) => {
   let options = undefined;
   pool.getConnection(function (err, conn) {
     if (err) {
-      callback(false);
+      callback(false, err);
     } else {
       conn.query(sql, options, function (err, results, fields) {
-        if (err) { callback( false ); }
-        else { callback( true ); }
+        if (err) { callback(false, err); }
+        else { callback(true, null); }
+        conn.release();
       });
-      conn.release();
     }
   });
 }

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 """
 Class representing a student exam record.

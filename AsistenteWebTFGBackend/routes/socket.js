@@ -4,15 +4,63 @@ const archiver = require('archiver');
 const fs = require('fs');
 const path = require('path');
 const pdfPageCounter = require('pdf-page-counter');
-var PDFMerger = require('pdf-merger-js');
 
 const DAL = require('../DAL');
 
-const { exec, execSync, spawn } = require("child_process");
+const { exec, execFileSync, spawn } = require("child_process");
 
 const PUBLIC = 'public';
 const USER_DATA = 'user_data';
 const os = require("os");
+
+const AI_PYTHON_BIN = process.env.AI_PYTHON_BIN ||
+  path.resolve(__dirname, '..', '..', '.venv', 'bin', 'python');
+const AI_MODULE_PATH = process.env.AI_MODULE_PATH ||
+  path.resolve(__dirname, '..', '..', 'AsistenteWebTFGBackendAIModule', 'main.py');
+const AI_MODULE_USER_DATA_ROOT = process.env.AI_MODULE_USER_DATA_ROOT ||
+  path.resolve(__dirname, '..', USER_DATA);
+
+// Prediction jobs are shared across Socket.IO connections. This prevents the
+// upload socket and the exam page socket from starting the same OCR job twice.
+const childProcesses = new Map();
+
+function emitPrediction(job, message) {
+  job.lastMessage = message;
+  for (const subscriber of job.sockets) {
+    subscriber.emit('examen-predict-response', message);
+  }
+}
+
+function resolvePdfName(index, requestedName) {
+  const examDir = path.join(AI_MODULE_USER_DATA_ROOT, index);
+  if (!fs.existsSync(examDir)) {
+    throw new Error(`Exam directory not found: ${examDir}`);
+  }
+
+  const requestedBase = path.parse(path.basename(String(requestedName || ''))).name;
+  const requestedCandidates = [
+    requestedBase,
+    requestedBase.replace(/\s+/g, '_'),
+  ].filter(Boolean);
+
+  for (const candidate of requestedCandidates) {
+    if (fs.existsSync(path.join(examDir, `${candidate}.pdf`))) {
+      return candidate;
+    }
+  }
+
+  const pdfFiles = fs.readdirSync(examDir, { withFileTypes: true })
+    .filter(entry => entry.isFile() && path.extname(entry.name).toLowerCase() === '.pdf')
+    .map(entry => entry.name);
+
+  if (pdfFiles.length === 1) {
+    return path.parse(pdfFiles[0]).name;
+  }
+
+  throw new Error(
+    `Cannot resolve PDF "${requestedBase}" in ${examDir}; found ${pdfFiles.length} PDF files`
+  );
+}
 
 async function pdftoppm(read, write, pages, socket, idExam) {
 
@@ -249,6 +297,15 @@ const connection = async (socket) => {
             socket.emit('insert-examen-error', { idExam: idExam, message: 'Error al procesar el examen' });
           } else {
             socket.emit('insert-examen-listo', { idExam: idExam });
+            db.syncQuery('SELECT isAvanzado FROM examenes WHERE id = ?', [idExam])
+              .then(rows => {
+                if (rows && rows.length === 1 && Number(rows[0].isAvanzado) === 1) {
+                  spawnPrediction(index, path.parse(baseName).name, socket);
+                }
+              })
+              .catch(err => {
+                console.error(`Cannot check automatic prediction for exam ${idExam}:`, err);
+              });
           }
         });
 
@@ -297,7 +354,7 @@ const connection = async (socket) => {
         break;
     }
   });
-  //Devuelve las imagenes de un examen dados los id de usuario, asignatura y examen 
+  //Devuelve las imagenes de un examen dados los id de usuario, asignatura y examen
   socket.on('select-examen-imgs', (data) => {
 
     let idUsuario = data.usuario;
@@ -372,6 +429,16 @@ const connection = async (socket) => {
     let progressTotal = 0;
     let progress = 0;
 
+    function dniWithoutCheckLetter(value) {
+      const dni = String(value || '').trim().toUpperCase();
+
+      if (/^\d+[A-Z]$/.test(dni) || /^[XYZNP]\d+[A-Z]$/.test(dni)) {
+        return dni.slice(0, -1);
+      }
+
+      return dni;
+    }
+
     function writeZIP() {
 
       if (progress < progressTotal) {
@@ -422,8 +489,9 @@ const connection = async (socket) => {
       let csvPadrino = 'ID estudiente;Nota\n';
 
       calificados.forEach(c => {
-        csvInfo += `${c.dni};${c.apellidos};${c.nombre};${c.nota};${c.ini};${c.fin}\n`;
-        if (c.dni.length > 0) { csvPadrino += `${c.dni};${c.nota}\n`; }
+        const exportedDni = dniWithoutCheckLetter(c.dni);
+        csvInfo += `${exportedDni};${c.apellidos};${c.nombre};${c.nota};${c.ini};${c.fin}\n`;
+        if (exportedDni.length > 0) { csvPadrino += `${exportedDni};${c.nota}\n`; }
       });
       csvInfo = csvInfo.trim();
       csvPadrino = csvPadrino.trim();
@@ -437,169 +505,263 @@ const connection = async (socket) => {
       progress++;
       writeZIP();
     }
-    function writePDFLinux(calificados) {
+  function writePDF(calificados) {
+    let sinNombre = 0;
 
+    const userHomeDir = os.homedir();
+    const scanBat = path.join(userHomeDir, 'exam_scan', 'sube.bat');
+    const destBat = path.join(dirExamenes, 'sube.bat');
+
+    console.log('scanBat: %s destBat: %s', scanBat, destBat);
+
+    // Copier sube.bat seulement s'il existe
+    if (fs.existsSync(scanBat)) {
+      fs.copyFileSync(scanBat, destBat);
+    } else {
+      console.log('sube.bat absent, copie ignorée');
     }
 
-    function writePDF(calificados) {
+    calificados.forEach(c => {
+      let filename = '';
+      const exportedDni = dniWithoutCheckLetter(c.dni);
 
-      let sinNombre = 0;
+      if (exportedDni.length > 0) {
+        let alumnoDNI = exportedDni;
+        let examenNombre = examen.nombre.replace(/ /g, '_');
+        let alumnoNombre = (
+          c.nombre.replace(/ /g, '_') +
+          '_' +
+          c.apellidos.replace(/ /g, '_')
+        )
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/\p{Diacritic}/gu, "");
 
-      const userHomeDir = os.homedir();
-      let readdir = path.join(userHomeDir, 'exam_scan/sube.bat');
-      let writedir = path.join(dirExamenes, 'sube.bat');
-      console.log('readdir: %s writedir %s', readdir, writedir);
-      fs.copyFileSync(readdir, writedir);
-      calificados.forEach(c => {
+        filename = `${alumnoDNI}_${examenNombre}_${alumnoNombre}.pdf`;
+      } else {
+        filename = 'XXXXXXXXX_Sin_nombre_' + (++sinNombre) + '.pdf';
+      }
 
-        let filename = '';
+      const writePath = path.join(dirExamenes, filename);
+      const readPath = path.join(dirPrivate, examen.nombre.replace(/ /g, '_') + '.pdf');
+      const firstPage = Number(c.ini);
+      const lastPage = Number(c.fin);
+      const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'madrina-pages-'));
+      const pagePattern = path.join(temporaryDirectory, 'page-%d.pdf');
 
-        if (c.dni.length > 0) {
-
-          let alumnoDNI = c.dni.toUpperCase();
-          let examenNombre = examen.nombre.replace(' ', '_');
-          let alumnoNombre = (
-            c.nombre.replace(' ', '_') +
-            '_' +
-            c.apellidos.replace(' ', '_')
-          ).toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
-
-          filename = `${alumnoDNI}_${examenNombre}_${alumnoNombre}.pdf`;
-        } else {
-          filename = 'XXXXXXXXX_Sin_nombre_' + (++sinNombre) + '.pdf';
+      try {
+        if (!Number.isInteger(firstPage) || !Number.isInteger(lastPage) ||
+            firstPage < 1 || lastPage < firstPage) {
+          throw new Error(`Invalid page range: ${c.ini}-${c.fin}`);
         }
 
-        let writedir = path.join(dirExamenes, filename);
-        let readdir = path.join(dirPrivate, (examen.nombre.replace(' ', '_') + '.pdf'))
-        let pages = (c.ini == c.fin) ? ([c.ini]) : (c.ini + '-' + c.fin);
+        execFileSync('pdfseparate', [
+          '-f', String(firstPage),
+          '-l', String(lastPage),
+          readPath,
+          pagePattern,
+        ], { stdio: 'ignore' });
 
+        const pageFiles = fs.readdirSync(temporaryDirectory)
+          .filter(file => /^page-\d+\.pdf$/.test(file))
+          .sort((a, b) => {
+            const pageA = Number(a.match(/\d+/)[0]);
+            const pageB = Number(b.match(/\d+/)[0]);
+            return pageA - pageB;
+          })
+          .map(file => path.join(temporaryDirectory, file));
 
-        let command = `cpdf ${readdir}  ${pages} -o "${writedir}" > /dev/null`;
-        //console.log ('comnad: %s', command);
-        execSync(command);
+        if (pageFiles.length === 0) {
+          throw new Error(`No page extracted for range ${firstPage}-${lastPage}`);
+        }
 
+        execFileSync('pdfunite', [...pageFiles, writePath], { stdio: 'ignore' });
+      } catch (err) {
+        console.error('Erreur writePDF/poppler:', err.message);
+      } finally {
+        fs.rmSync(temporaryDirectory, { recursive: true, force: true });
         progress++;
         writeZIP();
-        /*
-        let merger = new PDFMerger();
-        
-        merger.add(readdir, pages);
-        console.log ('readdir %s writedir %s pages %s progress %d', readdir, writedir, pages, progress);
-        merger.save(writedir).then(response => {
-          progress++;
-          writeZIP();
-        }).catch(err => { console.error(err); });
-        */
-      });
-    }
-
-    let sql = 'SELECT * FROM calificados WHERE examen = ?';
-    db.query(sql, [idExam], (er, result, fields) => {
-      progressTotal = result.length + 1;
-      writeCSV(result);
-      writePDF(result);
+      }
     });
-  });
+  }
 
-  //const command = "python3"
-  const command = "/home/ariouich/Bureau/valencia/Madrina/.venv/bin/python";
-  const pathToScript = path.join(__dirname, '..', 'CNN_HandWrittenRecognition', 'main.py');
-  let childProcesses = {};
+      let sql = 'SELECT * FROM calificados WHERE examen = ?';
+      db.query(sql, [idExam], (er, result, fields) => {
+        progressTotal = result.length + 1;
+        writeCSV(result);
+        writePDF(result);
+      });
+    });
 
-  socket.on('examen-predict', async (data) => {
-
-    //Datos para localizar el examen
-    let usuario = data.usuario;
-    let asignatura = data.asignatura;
-    let examen = data.examen;
-
-    let asignaturaNom = data.asignaturaNom;
-    let index = usuario + '-' + asignatura + '-' + examen;
-    //Ya hay un proceso en marcha
-    if (childProcesses[index]) { //Si ya está en marcha nos enganchamos al proceso
-      
-      //TO-DO
-      //Emitir señal de que ya se está procesando
+  async function spawnPrediction(index, requestedPdfName, socket) {
+    const runningJob = childProcesses.get(index);
+    if (runningJob) {
+      runningJob.sockets.add(socket);
+      if (runningJob.lastMessage) {
+        socket.emit('examen-predict-response', runningJob.lastMessage);
+      }
       return;
     }
-    //Obtener todos los alumnos de ese examen
+
+    const parts = index.split('-');
+    if (parts.length !== 3) {
+      socket.emit('examen-predict-response', `error Invalid exam index: ${index}`);
+      return;
+    }
+
+    const asignatura = parts[1];
+    const examen = parts[2];
+
+    const job = {
+      child: null,
+      completed: false,
+      failed: false,
+      finalizing: null,
+      lastMessage: 'progress 0 Preparando el modelo IA',
+      sockets: new Set([socket]),
+      stderr: '',
+    };
+    childProcesses.set(index, job);
+    emitPrediction(job, job.lastMessage);
 
     let progressconversion = 0;
     let progressFindStructure = 0;
-    DAL.getAlumnosFromAsignatura(asignatura).then((result) => {
-      let alumnosJson = JSON.stringify(result);
-      let args = [pathToScript, index, asignaturaNom, alumnosJson]
-      const child = spawn(command, args)
-      //guardamos el proceso hijo
-      childProcesses[index] = child;
 
-      let prediccionesAlumnos = [];
-      child.stdout.on('data', (data) => {
+    const failPrediction = (message) => {
+      if (job.failed || job.completed) return;
+      job.failed = true;
+      console.error(`AI prediction failed for ${index}: ${message}`);
+      emitPrediction(job, `error ${message}`);
+    };
 
-        let output = data.toString('utf-8').trim();
-        //Split en caso de que lleguen varias lineas en un solo mensaje
-        //Cada linea será una unidad independiente de informacion
-        output.split('\n').forEach(element => {
-          let splitted = element.split(' ')
-          let preamble = splitted[0]
-          let data = splitted.slice(1, splitted.length).join(' ').trim()
+    const processLine = (rawLine) => {
+      const element = rawLine.trim();
+      if (!element) return;
 
-          switch (preamble) {
-            case "progress":
-              let state = splitted.slice(2, splitted.length).join(' ').trim()
-              
-              switch (state) {
-                case "Buscando DNIs en páginas":
-                  if (Number(splitted[1]) > progressFindStructure) {
-                    progressFindStructure = splitted[1]
-                    socket.emit('examen-predict-response', element)
-                  }
-                  break;
-                case "Convirtiendo PDF a imagenes":
-                  if (splitted[1] > progressconversion) {
-                    progressconversion = splitted[1]
-                    socket.emit('examen-predict-response', element)
-                  }
-                  break;
-              }
-              break;
-            case "new-calificado":
-              let dataJson = JSON.parse(data)
-              prediccionesAlumnos.push(dataJson);
-              break;
-            case "done":
-              //Añadimos las predicciones en la base de datos
-              prediccionesAlumnos.forEach(alumno => {
-                DAL.insertAlumnoCalificado(alumno, false)
-              });
-              //Marcamos el examen como predicho
-              DAL.setExamenIsPredicted(examen, true);
-              socket.emit('examen-predict-response', element);
-              break;
+      const firstSpace = element.indexOf(' ');
+      const preamble = firstSpace === -1 ? element : element.slice(0, firstSpace);
+      const lineData = firstSpace === -1 ? '' : element.slice(firstSpace + 1).trim();
+
+      switch (preamble) {
+        case 'progress': {
+          const progressParts = lineData.split(' ');
+          const progress = Number(progressParts[0]);
+          const state = progressParts.slice(1).join(' ').trim();
+
+          if (state === 'Buscando DNIs en páginas' && progress > progressFindStructure) {
+            progressFindStructure = progress;
+            emitPrediction(job, element);
+          } else if (state === 'Convirtiendo PDF a imagenes' && progress > progressconversion) {
+            progressconversion = progress;
+            emitPrediction(job, element);
+          } else if (state === 'Preparando el modelo IA') {
+            emitPrediction(job, element);
           }
+          break;
+        }
+        case 'new-calificado':
+          try {
+            job.predictions.push(JSON.parse(lineData));
+          } catch (err) {
+            failPrediction(`Invalid AI result: ${err.message}`);
+          }
+          break;
+        case 'done':
+          if (!job.finalizing && !job.failed) {
+            job.finalizing = (async () => {
+              await Promise.all(
+                job.predictions.map(alumno => DAL.insertAlumnoCalificado(alumno, false))
+              );
+              await DAL.setExamenIsPredicted(examen, true);
+              job.completed = true;
+              emitPrediction(job, element);
+            })().catch(err => failPrediction(`Cannot save AI results: ${err.message}`));
+          }
+          break;
+        case 'error':
+          failPrediction(lineData || 'Unknown AI error');
+          break;
+        default:
+          console.log(`[AI ${index}] ${element}`);
+      }
+    };
 
+    try {
+      fs.accessSync(AI_PYTHON_BIN, fs.constants.X_OK);
+      fs.accessSync(AI_MODULE_PATH, fs.constants.R_OK);
 
+      const pdfNameNoExt = resolvePdfName(index, requestedPdfName);
+      const students = await DAL.getAlumnosFromAsignatura(asignatura);
+      job.predictions = [];
 
-        });
+      const args = [AI_MODULE_PATH, index, pdfNameNoExt, JSON.stringify(students)];
+      const child = spawn(AI_PYTHON_BIN, args, {
+        cwd: path.dirname(AI_MODULE_PATH),
+        env: {
+          ...process.env,
+          AI_MODULE_USER_DATA_ROOT,
+          PYTHONUNBUFFERED: '1',
+        },
+      });
+      job.child = child;
+
+      let stdoutBuffer = '';
+      child.stdout.on('data', (data) => {
+        stdoutBuffer += data.toString('utf-8');
+        const lines = stdoutBuffer.split(/\r?\n/);
+        stdoutBuffer = lines.pop();
+        lines.forEach(processLine);
       });
 
       child.stderr.on('data', (data) => {
-        console.error(data.toString('utf-8'));
-      });
-      child.on('exit', (code) => {
-        delete childProcesses[index];
-        //console.log(`Child exited with code ${code}`);
+        const message = data.toString('utf-8');
+        job.stderr = (job.stderr + message).slice(-8000);
+        console.error(`[AI ${index}] ${message.trimEnd()}`);
       });
 
-    });
+      child.on('error', (err) => {
+        failPrediction(`Cannot start Python process: ${err.message}`);
+      });
 
+      child.on('close', async (code, signal) => {
+        if (stdoutBuffer.trim()) processLine(stdoutBuffer);
+        if (job.finalizing) await job.finalizing;
 
+        if (!job.completed && !job.failed) {
+          const detail = job.stderr.trim().split(/\r?\n/).pop();
+          failPrediction(
+            `AI process stopped before completion (code=${code}, signal=${signal || 'none'})` +
+            (detail ? `: ${detail}` : '')
+          );
+        }
+        childProcesses.delete(index);
+      });
+    } catch (err) {
+      failPrediction(err.message);
+      childProcesses.delete(index);
+    }
+  }
 
+  socket.on('examen-predict', async (data) => {
+    let usuario = data.usuario;
+    let asignatura = data.asignatura;
+    let examen = data.examen;
+    let asignaturaNom = data.asignaturaNom;
+    let index = usuario + '-' + asignatura + '-' + examen;
 
-
-
+    spawnPrediction(index, asignaturaNom, socket);
   });
 
+  socket.on('examen-predict-kill', (data) => {
+    const index = `${data.usuario}-${data.asignatura}-${data.examen}`;
+    const job = childProcesses.get(index);
+    if (job && job.child) {
+      job.failed = true;
+      job.child.kill('SIGTERM');
+      emitPrediction(job, 'error Predicción cancelada');
+    }
+  });
 
 }
 

@@ -23,10 +23,17 @@ if (!fs.existsSync(path.join(__dirname, 'user_data'))) {
   fs.mkdirSync( path.join(__dirname, 'user_data') );
 }
 
-db.isConnected((connected) => {
+db.isConnected((connected, err) => {
   if (!connected) {
-    console.log('No se ha podido conectar con la base de datos');
-    process.exit(0);
+    const host = process.env.DB_HOST || '127.0.0.1';
+    const port = process.env.DB_PORT || '3306';
+    const database = process.env.DB_NAME || 'MargotDB';
+    const code = err && (err.code || err.errno || err.message);
+    console.error(
+      `No se ha podido conectar con MySQL en ${host}:${port}/${database}` +
+      (code ? ` (${code})` : '')
+    );
+    process.exit(1);
   }
 });
 

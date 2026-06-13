@@ -1,6 +1,7 @@
-import sys
+from __future__ import annotations
 
-from student import Alumno
+import sys
+from Modules.student import Alumno
 
 
 """
@@ -23,3 +24,7 @@ class Emitter:
         
     def emit_student(self, alumno : Alumno):
         sys.stdout.write(f"new-calificado {alumno.to_json()}\n")
+
+    def emit_error(self, message):
+        clean_message = str(message).replace("\r", " ").replace("\n", " ").strip()
+        sys.stdout.write(f"error {clean_message}\n")
