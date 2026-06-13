@@ -1,0 +1,46 @@
+version: "3.3"
+
+services:
+
+  # ── Node.js backend + Python AI module ────────────────────────────────────
+  backend:
+    image: madrina-backend:latest
+    container_name: madrina_backend
+    restart: unless-stopped
+    network_mode: "host"
+
+    environment:
+      # ── External database ──────────────────────────────────────────────────
+      DB_HOST: "${DB_HOST}"
+      DB_USER: "${DB_USER}"
+      DB_PASSWORD: "${DB_PASSWORD}"
+      DB_NAME: "${DB_NAME}"
+      DB_PORT: "${DB_PORT}"
+      PORT: "3000"
+      AI_PYTHON_BIN: /app/.venv/bin/python
+      AI_MODULE_PATH: /app/AsistenteWebTFGBackendAIModule/main.py
+      AI_MODULE_USER_DATA_ROOT: /app/AsistenteWebTFGBackend/user_data
+      AI_PDF_WORKERS: "2"
+      AI_DETECTION_WORKERS: "2"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      PYTHONUNBUFFERED: "1"
+
+    volumes:
+      - backend_public:/app/AsistenteWebTFGBackend/public
+      - "${USER_DATA_PATH}:/app/AsistenteWebTFGBackend/user_data"
+
+  # ── Angular frontend (served by Nginx) ────────────────────────────────────
+  frontend:
+    image: madrina-frontend:latest
+    container_name: madrina_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    extra_hosts:
+      - "backend:host-gateway"
+    ports:
+      - "8080:80"
+
+volumes:
+  backend_public:

@@ -1,0 +1,52 @@
+# ── Node.js backend + Python AI module ───────────────────────────────────────
+#
+# socket.js spawns the Python module using relative paths:
+#   command : "../.venv/bin/python"
+#   script  : "../../AsistenteWebTFGBackendAIModule/main.py"
+# We reproduce the same directory structure inside /app/:
+#
+#   /app/
+#     .venv/                          ← Python virtual environment
+#     AsistenteWebTFGBackend/         ← Express server (process CWD)
+#     AsistenteWebTFGBackendAIModule/ ← Python AI module
+#
+FROM node:18-slim
+
+# ── System dependencies ───────────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 \
+        python3-venv \
+        poppler-utils \
+        ghostscript \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# ── Python venv ───────────────────────────────────────────────────────────────
+RUN python3 -m venv /app/.venv
+
+# ── PyTorch CPU (same version as local environment, without CUDA) ─────────────
+# Local environment uses torch 2.11.0+cu126 — use the matching CPU build so
+# the saved .pt checkpoints load correctly.
+RUN /app/.venv/bin/pip install --no-cache-dir \
+        torch==2.11.0 torchvision==0.26.0 \
+        --extra-index-url https://download.pytorch.org/whl/cpu
+
+# ── Runtime AI dependencies (see requirements-docker.txt) ────────────────────
+COPY requirements-docker.txt /app/requirements-docker.txt
+RUN /app/.venv/bin/pip install --no-cache-dir -r /app/requirements-docker.txt
+
+# ── AI module source ──────────────────────────────────────────────────────────
+COPY AsistenteWebTFGBackendAIModule/ /app/AsistenteWebTFGBackendAIModule/
+
+# ── Node.js dependencies ──────────────────────────────────────────────────────
+WORKDIR /app/AsistenteWebTFGBackend
+COPY AsistenteWebTFGBackend/package*.json ./
+RUN npm ci --omit=dev
+
+# ── Backend source ────────────────────────────────────────────────────────────
+COPY AsistenteWebTFGBackend/ ./
+
+EXPOSE 3000
+
+CMD ["node", "./bin/www"]
