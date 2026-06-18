@@ -1,4 +1,4 @@
-import { AfterContentChecked, Component, ElementRef, HostListener, NgProbeToken, OnDestroy, OnInit, Query, QueryList, ViewChild, ViewChildren } from '@angular/core';
+import { AfterContentChecked, Component, ElementRef, NgProbeToken, OnDestroy, OnInit, Query, QueryList, ViewChild, ViewChildren } from '@angular/core';
 import { FormControl } from '@angular/forms';
 import { MatDialog } from '@angular/material/dialog';
 import { MatDrawerMode, MatSidenav } from '@angular/material/sidenav';
@@ -90,6 +90,7 @@ export class ExamenAdvancedComponent implements OnInit, AfterContentChecked {
   loading: boolean = true;
   loadingProgress: number = 0;
   loadingState: string = '';
+  classificationElapsedTime: string = '';
 
   selectedRow: CalificadoAutomatizado = new CalificadoAutomatizado();
   selectedElement!: HTMLElement;
@@ -191,9 +192,11 @@ export class ExamenAdvancedComponent implements OnInit, AfterContentChecked {
   }
 
   onRowClickEvent(event: MouseEvent, row: any) {
-    this.selectedElement = event.target as HTMLElement;
-    this.lastSelectedRow = this.selectedElement;
+    let rowElement = event.currentTarget as HTMLElement;
+    this.selectedElement = rowElement;
+    this.lastSelectedRow = rowElement;
     this.onRowClick(row);
+    rowElement.focus();
   }
   onRowClick(row: any) {
 
@@ -281,88 +284,74 @@ export class ExamenAdvancedComponent implements OnInit, AfterContentChecked {
 
     if (event.key == 'Tab') {
       event.preventDefault();
+      event.stopPropagation();
       this.focusElements[n].focus();
     } else if (n == 3) {
       if (event.key == 's' || event.key == 'ArrowDown' || event.key == 'Enter') { this.pdfDown(); }
       else if (event.key == 'w' || event.key == 'ArrowUp') { this.pdfUp(); }
       this.pFin = this.imgsPos;
     } else if (n == 0 && event.key == 'Enter') {
+      event.preventDefault();
+      event.stopPropagation();
       this.sendCalificado();
     }
   }
-  // Intercept any key press
-  @HostListener('document:keydown', ['$event'])
-  handleKeydown(event: KeyboardEvent) {
-    //event.preventDefault();
-    if (this.selectedElement != undefined && this.selectedElement.tagName == "TD" || this.selectedElement.tagName == "TR") {
-
-      if (event.key.toUpperCase() == 'N') {
-        event.preventDefault();
-        console.log("Añadir nuevo alumno")
-        let calificadoAux = new CalificadoAutomatizado();
-        calificadoAux.ini = this.selectedRow.fin + 1;
-        this.editCalificado(calificadoAux);
-
-      }
-      else
-        if (event.key == 'Tab') {
-          event.preventDefault();
-          this.focusNextOnRow(event, this.selectedRow);
-        }
-        else if (event.key === 'Enter' ||
-    event.key.toUpperCase() === 'E' ||
-    event.code === 'Space' ||
-    event.key === ' ') {
-          event.preventDefault();
-          console.log("Enter on Row Global")
-          this.lastSelectedRow = this.selectedElement;
-          this.editCalificado(this.selectedRow);
-        }
-
-    }
-
-
-  }
 
   handleKeydownOnTable(event: KeyboardEvent) {
-    event.preventDefault();
     if (event.key == 'Tab') {
+      event.preventDefault();
+      event.stopPropagation();
       this.focusNextOnRow(event, this.selectedRow);
     }
-    else if (event.key == 'Enter') {
-      console.log("Enter on Row")
+    else if (event.key == ' ' || event.code == 'Space') {
+      event.preventDefault();
+      event.stopPropagation();
       this.editCalificado(this.selectedRow);
     }
 
   }
   focusNextOnRow(event: KeyboardEvent, row: any) {
-    event.preventDefault();
-    console.log("Se ha pulsado una tecla sobre row")
     if (event.key === 'Tab') {
+      event.preventDefault();
+      event.stopPropagation();
       // Mark it as verified
 
       //this.focusNextRow(row);
 
       this.sendVerificado(row);
-
-
-      this.showCalificadoInfo(row)
-      this.focusNextRow(row)
-      //get next row
+    }
+    else if (event.key == ' ' || event.code == 'Space') {
+      event.preventDefault();
+      event.stopPropagation();
+      this.editCalificado(row);
     }
 
   }
   focusNextRow(row: any) {
-    let nextIndex = this.calificadosSource.data.findIndex(item => item.id == row.id)
+    this.focusNextRowById(row.id);
+  }
+  private focusNextRowById(id: number) {
+    let nextIndex = this.calificadosSource.data.findIndex(item => item.id == id)
+    if (nextIndex == -1 || this.calificadosSource.data.length == 0) {
+      return;
+    }
     nextIndex += 1;
     if (nextIndex >= this.calificadosSource.data.length) {
       nextIndex = 0;
     }
-    //let htmlElementAux = this.tableRows.toArray();
-    //htmlElementAux[nextIndex].nativeElement.scrollIntoView();
-    this.tableRows.toArray()[nextIndex].nativeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
     this.selectedRow = this.calificadosSource.data[nextIndex];
     this.onRowClick(this.selectedRow);
+    setTimeout(() => this.focusRowElement(nextIndex), 0);
+  }
+  private focusRowElement(index: number) {
+    let row = this.tableRows.toArray()[index];
+    if (row == undefined) {
+      return;
+    }
+    this.selectedElement = row.nativeElement;
+    this.lastSelectedRow = row.nativeElement;
+    row.nativeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    row.nativeElement.focus();
   }
   focusNextRowNotVerified() {
     this.apiService.examenAlumnosGetAutomatizado(this.examen).subscribe(res => {
@@ -399,7 +388,7 @@ export class ExamenAdvancedComponent implements OnInit, AfterContentChecked {
     this.disabledSendButton = true;
 
     let calificado = new CalificadoAutomatizado();
-    calificado.id = this.edit.id;
+    calificado.id = row.id;
     calificado.apellidos = alumno.apellidos;
     calificado.asignatura = alumno.asignatura;
     calificado.dni = alumno.dni;
@@ -412,18 +401,10 @@ export class ExamenAdvancedComponent implements OnInit, AfterContentChecked {
 
     if (this.edit.id > 0) {
       this.apiService.calificadoEditAutomatizado(calificado).subscribe(res => {
-        this.getExamenAlumnos();
-        let index = this.calificadosSource.data.findIndex(c => c.id == row.id);
-        if (index != -1) {
-          if (index + 1 == this.calificadosSource.data.length) { //For last row
-            index = -1;
-          }
-          this.selectedRow = this.calificadosSource.data[index + 1];
-          if (index >= this.calificadosSource.data.length)
-
-            this.onRowClick(this.selectedRow);
-        }
-        this.disabledSendButton = false;
+        this.getExamenAlumnos(() => {
+          this.focusNextRowById(row.id);
+          this.disabledSendButton = false;
+        });
       });
     }
   }
@@ -451,10 +432,8 @@ export class ExamenAdvancedComponent implements OnInit, AfterContentChecked {
 
     if (this.edit.id > 0) {
       this.apiService.calificadoEditAutomatizado(calificado).subscribe(res => {
-        this.getExamenAlumnos();
+        this.getExamenAlumnos(() => this.focusNextRowById(calificado.id));
         this.disabledSendButton = false;
-        this.selectedElement = this.lastSelectedRow;
-        this.selectedElement.focus();
       });
     } else {
       let alumnoLabel = this.alumnoLabel.toString();
@@ -565,6 +544,9 @@ export class ExamenAdvancedComponent implements OnInit, AfterContentChecked {
         case 'fin-all': {
           if (!this.finLoadingImages) {
             this.finLoadingImages = true;
+            if (!this.loading && this.loadingProgress == 0) {
+              this.loadingProgress = 100;
+            }
             this.focusNextRowNotVerified();
             this.getStatistics();
           }
@@ -652,11 +634,18 @@ export class ExamenAdvancedComponent implements OnInit, AfterContentChecked {
           this.loadingState = state;
           break;
         case 'done':
+          this.classificationElapsedTime = this.formatElapsedTime(data);
           this.loading = false;
           this.getExamenAlumnos();
+          this.snackBar.open(`Clasificación automática finalizada en ${this.classificationElapsedTime}`, 'OK', {
+            duration: 6000,
+            horizontalPosition: 'center',
+            verticalPosition: 'top',
+          });
           break;
         case 'error':
           this.loading = false;
+          this.finLoadingImages = true;
           this.loadingState = data;
           this.snackBar.open(data, 'OK', {
             duration: 10000,
@@ -668,6 +657,18 @@ export class ExamenAdvancedComponent implements OnInit, AfterContentChecked {
     }
     );
 
+  }
+
+  isPreparingExam(): boolean {
+    return this.loading || !this.finLoadingImages;
+  }
+
+  private formatElapsedTime(value: string): string {
+    let normalized = value.trim();
+    if (normalized.length == 0) {
+      return 'tiempo no disponible';
+    }
+    return normalized.split('.')[0];
   }
 
 
@@ -733,13 +734,16 @@ export class ExamenAdvancedComponent implements OnInit, AfterContentChecked {
     });
   }
 
-  private getExamenAlumnos(): void {
+  private getExamenAlumnos(afterUpdate?: () => void): void {
     this.apiService.examenAlumnosGetAutomatizado(this.examen).subscribe(res => {
       this.alumnos = <AlumnoExamen[]>res.data.alumnos;
       this.calificados = <CalificadoAutomatizado[]>res.data.calificados;
       this.verificados = this.calificados.filter(c => c.verificado == 1).length;
       this.sinVerificar = this.calificados.filter(c => c.verificado == 0).length;
       this.updateTable();
+      if (afterUpdate != undefined) {
+        afterUpdate();
+      }
     });
   }
 

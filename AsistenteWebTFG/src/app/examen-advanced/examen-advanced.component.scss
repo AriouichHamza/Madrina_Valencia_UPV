@@ -192,6 +192,25 @@
   z-index: 1000;
 }
 
+.loading-overlay-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  max-width: 520px;
+  padding: 24px;
+  background-color: #fff;
+  border-radius: 4px;
+  text-align: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+.loading-overlay-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.87);
+}
+
 .no-interaction {
   pointer-events: none;
   opacity: 0.5;  
@@ -212,6 +231,8 @@
 .examen-stats-container{
   display: flex;
   flex-direction: row;
+  align-items: center;
+  gap: 16px;
 
   margin-top: 20px;
   justify-content: space-between;
@@ -230,5 +251,11 @@
   margin-bottom: 3px;
 }
 .loading-overlay-progress{
-  margin-left: 10px;
+  color: rgba(0, 0, 0, 0.7);
+}
+
+.keyboard-help {
+  color: rgba(0, 0, 0, 0.7);
+  font-size: 12px;
+  font-weight: 500;
 }

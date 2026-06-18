@@ -1,13 +1,19 @@
 <app-navbar [back]="true" [settings]="true"></app-navbar>
 
-<div class="loading-overlay" *ngIf="loading">
-	<mat-spinner></mat-spinner>
-	<div class= "loading-overlay-progress">
-		{{ loadingProgress }}%  {{ loadingState }}
+<div class="loading-overlay" *ngIf="isPreparingExam()">
+	<div class="loading-overlay-panel">
+		<mat-spinner></mat-spinner>
+		<div class="loading-overlay-title">Espere mientras se cargan todas las páginas del examen.</div>
+		<div class="loading-overlay-progress">
+			{{ loadingProgress }}% {{ loadingState }}
+		</div>
+		<div class="keyboard-help">
+			Usa TAB para validar un alumno. Usa ESPACIO para corregir un alumno.
+		</div>
 	</div>
 </div>
 
-<div class="examen-main" [ngClass]="{'no-interaction': loading}">
+<div class="examen-main" [ngClass]="{'no-interaction': isPreparingExam()}">
 	<div class="examen-main-limiter">
 		<div class="examen-img" #imgContainer>
 			<div class="examen-img-container">
@@ -69,18 +75,25 @@
 						<div [style.color]="examen.color">{{examen.acronimo}}</div>
 						<div>{{examen.nombre}}</div>
 					</div>
-				</div>
-				<div class="examen-stats-container">
-					<div class="examen-stats-item">
-						<div class="examen-stats-item-label">Verificados/Sin verificar</div>
-						<div class="examen-stats-item-value">{{verificados}} / {{sinVerificar}}</div>
 					</div>
-					<div class="button-crear-alumno-container">
-						<button mat-button color="primary" (click)="editCalificadoFromButton()" class="bordered-btn">
-							Añadir nuevo alumno
-							<mat-icon class="icono-add-alumno">add</mat-icon>
-						</button>
-					</div>
+					<div class="examen-stats-container">
+						<div class="examen-stats-item">
+							<div class="examen-stats-item-label">Verificados/Sin verificar</div>
+							<div class="examen-stats-item-value">{{verificados}} / {{sinVerificar}}</div>
+						</div>
+						<div class="examen-stats-item keyboard-help">
+							Usa TAB para validar un alumno. Usa ESPACIO para corregir un alumno.
+						</div>
+						<div class="examen-stats-item" *ngIf="classificationElapsedTime">
+							<div class="examen-stats-item-label">Tiempo clasificación automática</div>
+							<div class="examen-stats-item-value">{{classificationElapsedTime}}</div>
+						</div>
+						<div class="button-crear-alumno-container">
+							<button mat-button color="primary" (click)="editCalificadoFromButton()" class="bordered-btn">
+								Añadir nuevo alumno
+								<mat-icon class="icono-add-alumno">add</mat-icon>
+							</button>
+						</div>
 				</div>
 				<div class="examen-calificar" #examenCalificar>
 					<div class="calificar-autocomplete-column">
@@ -164,7 +177,7 @@
 					<ng-container matColumnDef="edit">
 						<th mat-header-cell *matHeaderCellDef> Editar </th>
 						<td mat-cell *matCellDef="let calificado">
-							<button mat-icon-button color="primary" (click)="editCalificado(calificado)" tabindex="-1">
+							<button mat-icon-button color="primary" (click)="editCalificado(calificado); $event.stopPropagation()" tabindex="-1">
 								<mat-icon>edit</mat-icon>
 							</button>
 						</td>
@@ -173,6 +186,7 @@
 					<tr mat-header-row *matHeaderRowDef="calificadosHeader; sticky: true"></tr>
 					<tr mat-row *matRowDef="let calificado; columns: calificadosHeader;" #tableRow
 						[class.selected]="calificado.id === selectedRow.id"
+						tabindex="0"
 						(click)="onRowClickEvent($event,calificado )" (keydown)="focusNextOnRow($event, calificado)">
 					</tr>
 				</table>
