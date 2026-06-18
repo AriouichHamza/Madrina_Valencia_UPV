@@ -292,8 +292,142 @@ def print_results(rows):
         top_text = ", ".join([f"{lab}={prob*100:.2f}%" for lab, prob, _ in row["topk"]])
         print(f"{name[:45]:45s} | {row['prediction']:^6s} | {row['confidence']*100:7.2f}% | {top_text}")
     print("-" * 100)
-    
-    
+
+
+def _contiguous_runs(values):
+    values = list(values)
+    if len(values) == 0:
+        return []
+
+    runs = []
+    start = values[0]
+    previous = values[0]
+    for value in values[1:]:
+        if value <= previous + 1:
+            previous = value
+        else:
+            runs.append((start, previous))
+            start = value
+            previous = value
+    runs.append((start, previous))
+    return runs
+
+
+def _run_centers(runs):
+    return [int(round((start + end) / 2)) for start, end in runs]
+
+
+def _grade_grid_digit_boxes(img_grey):
+    dark_pixels = (img_grey < 180).astype(np.uint8)
+    height, width = dark_pixels.shape
+
+    horizontal_runs = _contiguous_runs(
+        np.where(dark_pixels.sum(axis=1) > width * 0.25)[0]
+    )
+    y_positions = _run_centers(horizontal_runs)
+    row_intervals = [
+        (y0, y1)
+        for y0, y1 in zip(y_positions, y_positions[1:])
+        if 70 <= y1 - y0 <= 220
+    ]
+    if len(row_intervals) == 0:
+        return []
+
+    vertical_runs = _contiguous_runs(
+        np.where(dark_pixels.sum(axis=0) > height * 0.15)[0]
+    )
+
+    best_interval = None
+    for row_top, row_bottom in row_intervals:
+        x_positions = []
+        for x_start, x_end in vertical_runs:
+            x_pos = int(round((x_start + x_end) / 2))
+            column = dark_pixels[row_top:row_bottom, max(0, x_pos - 2):min(width, x_pos + 3)]
+            if column.size == 0:
+                continue
+
+            coverage = (column.sum(axis=1) > 0).mean()
+            if coverage <= 0.82:
+                continue
+
+            top_band = dark_pixels[
+                max(0, row_top - 5):min(height, row_top + 8),
+                max(0, x_pos - 3):min(width, x_pos + 4),
+            ]
+            bottom_band = dark_pixels[
+                max(0, row_bottom - 8):min(height, row_bottom + 5),
+                max(0, x_pos - 3):min(width, x_pos + 4),
+            ]
+            if top_band.sum() == 0 or bottom_band.sum() == 0:
+                continue
+
+            x_positions.append(x_pos)
+
+        merged_positions = []
+        for x_pos in sorted(x_positions):
+            if len(merged_positions) > 0 and x_pos - merged_positions[-1] < 12:
+                merged_positions[-1] = int(round((merged_positions[-1] + x_pos) / 2))
+            else:
+                merged_positions.append(x_pos)
+
+        if best_interval is None or len(merged_positions) > len(best_interval[2]):
+            best_interval = (row_top, row_bottom, merged_positions)
+
+    if best_interval is None:
+        return []
+
+    row_top, row_bottom, x_positions = best_interval
+    candidate_boxes = []
+    candidate_widths = []
+    for x0, x1 in zip(x_positions, x_positions[1:]):
+        cell_width = x1 - x0
+        if 40 <= cell_width <= 220:
+            candidate_boxes.append((x0, row_top, x1, row_bottom))
+            candidate_widths.append(cell_width)
+
+    if len(candidate_boxes) == 0:
+        return []
+
+    wide_widths = [width for width in candidate_widths if width >= 100]
+    reference_width = float(np.median(wide_widths if len(wide_widths) > 0 else candidate_widths))
+    digit_boxes = []
+    for box in candidate_boxes:
+        x0, y0, x1, y1 = box
+        cell_width = x1 - x0
+        cell_height = y1 - y0
+        if cell_width < reference_width * 0.65:
+            continue
+
+        margin_x = max(10, int(cell_width * 0.14))
+        margin_y = max(10, int(cell_height * 0.14))
+        inner = img_grey[y0 + margin_y:y1 - margin_y, x0 + margin_x:x1 - margin_x]
+        if inner.size == 0:
+            continue
+
+        ink_ratio = np.count_nonzero(inner < 200) / inner.size
+        if ink_ratio > 0.012:
+            digit_boxes.append((x0, y0, x1, y1))
+
+    return digit_boxes
+
+
+def _crop_grade_digits_from_grid(img, img_grey):
+    digit_boxes = _grade_grid_digit_boxes(img_grey)
+    crop_califications_list = []
+    for x0, y0, x1, y1 in digit_boxes:
+        cell_width = x1 - x0
+        cell_height = y1 - y0
+        margin_x = max(10, int(cell_width * 0.14))
+        margin_y = max(10, int(cell_height * 0.14))
+        img_aux = img.crop((x0 + margin_x, y0 + margin_y, x1 - margin_x, y1 - margin_y))
+        img_auxCV = cv.cvtColor(np.array(img_aux), cv.COLOR_BGR2GRAY)
+        img_auxCV = cv.resize(img_auxCV, (28, 28))
+        img_auxCV = cv.bitwise_not(img_auxCV)
+        crop_califications_list.append(Image.fromarray(img_auxCV).convert('L'))
+
+    return crop_califications_list
+
+
 def detec_calification(numPage, model, classes=None, device=None):
     # Read the grade area, detect the filled boxes, and classify each handwritten digit.
     
@@ -302,67 +436,72 @@ def detec_calification(numPage, model, classes=None, device=None):
     img = Image.open(path_to_calification)
     
     img_grey = cv.cvtColor(np.array(img), cv.COLOR_BGR2GRAY)
+    crop_califications_list = _crop_grade_digits_from_grid(img, img_grey)
+    if len(crop_califications_list) > 0:
+        print("Grid grade detection: " + str(len(crop_califications_list)) + " digit cells on page " + str(numPage))
+
+    if len(crop_califications_list) == 0:
+        print("Falling back to contour grade detection on page " + str(numPage))
     #cv.imwrite(output_folder + "calification-grey-1-" + str(numPage) + ".png", img_grey)
-    blur = cv.GaussianBlur(img_grey, (5, 5), 0)
+        blur = cv.GaussianBlur(img_grey, (5, 5), 0)
     #cv.imwrite(output_folder + "calification-blur-1-" + str(numPage) + ".png", blur)
-    img_edge = cv.Canny(blur, 30, 200, 1)
+        img_edge = cv.Canny(blur, 30, 200, 1)
     #cv.imwrite(output_folder + "calification-edge-1-" + str(numPage) + ".png", img_edge)
     # Close small gaps so square borders are detected as complete contours.
-    kernel = cv.getStructuringElement(cv.MORPH_RECT, (3, 3))
-    closed = cv.morphologyEx(img_edge, cv.MORPH_CLOSE, kernel)
+        kernel = cv.getStructuringElement(cv.MORPH_RECT, (3, 3))
+        closed = cv.morphologyEx(img_edge, cv.MORPH_CLOSE, kernel)
     
     #cv.imwrite(output_folder + "calification-edge-closed" + str(numPage) + ".png", closed)
     
-    contours, _ = cv.findContours(closed, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
-    crop_califications_list = []
+        contours, _ = cv.findContours(closed, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
     
-    square_contours = []
-    for i, contour in enumerate(contours):
-        if is_square(contour):
-            square_contours.append(contour)
+        square_contours = []
+        for i, contour in enumerate(contours):
+            if is_square(contour):
+                square_contours.append(contour)
             
     # Sort left-to-right so the predicted digits keep the same order as the written grade.
-    square_contours = sorted(square_contours, key = lambda contour: cv.boundingRect(contour)[0] ) 
+        square_contours = sorted(square_contours, key = lambda contour: cv.boundingRect(contour)[0] )
     
     
-    for i, contour in enumerate(square_contours):
-        x, y, w, h = cv.boundingRect(contour)
+        for i, contour in enumerate(square_contours):
+            x, y, w, h = cv.boundingRect(contour)
         
         #print(str(numPage) + " and contour " + str(i) + " is square")
-        pathToClean = build_dump_path("clean1", numPage) + f"-{i}.png"
+            pathToClean = build_dump_path("clean1", numPage) + f"-{i}.png"
         
-        img_aux = img.crop((x, y, x + w, y + h))
+            img_aux = img.crop((x, y, x + w, y + h))
         
-        img_aux.save(pathToClean)
+            img_aux.save(pathToClean)
         #img_aux = closed[y:y+h, x:x+w]
         
-        img_auxCV = cv.imread(pathToClean)
+            img_auxCV = cv.imread(pathToClean)
         
-        img_auxCV = remove_margin_all(img_auxCV)
-        img_auxCV = cv.cvtColor(img_auxCV, cv.COLOR_BGR2GRAY)
+            img_auxCV = remove_margin_all(img_auxCV)
+            img_auxCV = cv.cvtColor(img_auxCV, cv.COLOR_BGR2GRAY)
         #ToGrey
         
         #
-        _, binary_img = cv.threshold(img_auxCV, 100, 255, cv.THRESH_BINARY)
-        white_pixels = cv.countNonZero(binary_img)
-        total_pixels = binary_img.size
+            _, binary_img = cv.threshold(img_auxCV, 100, 255, cv.THRESH_BINARY)
+            white_pixels = cv.countNonZero(binary_img)
+            total_pixels = binary_img.size
     
         # Skip boxes that are completely blank.
-        print("White pixels: " + str(white_pixels) + " Total pixels: " + str(total_pixels) + " = " + str(white_pixels/total_pixels)+ "  Page: " + str(numPage) + "  Contour: " + str(i))
-        if white_pixels == total_pixels:
-            print("Empty image")
-            continue
+            print("White pixels: " + str(white_pixels) + " Total pixels: " + str(total_pixels) + " = " + str(white_pixels/total_pixels)+ "  Page: " + str(numPage) + "  Contour: " + str(i))
+            if white_pixels == total_pixels:
+                print("Empty image")
+                continue
         
-        img_auxCV = cv.resize(img_auxCV, (28, 28))
+            img_auxCV = cv.resize(img_auxCV, (28, 28))
         
-        img_auxCV = cv.bitwise_not(img_auxCV)
+            img_auxCV = cv.bitwise_not(img_auxCV)
         
-        cv.imwrite(build_dump_path("final-cut", numPage) + f"-{i}.png", img_auxCV)
+            cv.imwrite(build_dump_path("final-cut", numPage) + f"-{i}.png", img_auxCV)
         #os.remove(pathToClean)
-        imgf = Image.open(build_dump_path("final-cut", numPage) + f"-{i}.png").convert('L')
+            imgf = Image.open(build_dump_path("final-cut", numPage) + f"-{i}.png").convert('L')
         
-        crop_califications_list.append(imgf)
-        continue
+            crop_califications_list.append(imgf)
+            continue
 
 
     predictions_califications = []
