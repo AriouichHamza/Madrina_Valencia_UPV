@@ -4,20 +4,23 @@
 	<mat-card-content>
 		<mat-form-field appearance="fill">
 			<mat-label>Correo electrónico @upv.es o dominio @dept.upv.es</mat-label>
-			<input matInput [(ngModel)]="usuario.nombre">
+			<input matInput [(ngModel)]="usuario.nombre" [disabled]="isLoading">
 		</mat-form-field>
 		<br>
 		<mat-form-field appearance="fill">
 			<mat-label>Contraseña</mat-label>
-			<input type="password" matInput [(ngModel)]="usuario.password">
+			<input type="password" matInput [(ngModel)]="usuario.password" (keyup.enter)="login()" [disabled]="isLoading">
 		</mat-form-field>
 		<br>
-		<button mat-button color="primary" (click)="cambioDePass()">¿Has olvidado tu contraseña?</button>
-		<button mat-button color="primary" (click)="info()">¿Necesitas ayuda?</button>
+		<button mat-button color="primary" (click)="cambioDePass()" [disabled]="isLoading">¿Has olvidado tu contraseña?</button>
+		<button mat-button color="primary" (click)="info()" [disabled]="isLoading">¿Necesitas ayuda?</button>
 	</mat-card-content>
 	<mat-card-actions align="end">
-		<button mat-flat-button (click)="signup()">Registrarse</button>
-		<button mat-flat-button color="primary" (click)="login()">ACCEDER</button>
+		<button mat-flat-button (click)="signup()" [disabled]="isLoading">Registrarse</button>
+		<button mat-flat-button color="primary" (click)="login()" [disabled]="isLoading">
+			<mat-spinner *ngIf="isLoading" diameter="20" style="display:inline-block; margin-right:8px;"></mat-spinner>
+			{{ isLoading ? 'ACCEDIENDO...' : 'ACCEDER' }}
+		</button>
 	</mat-card-actions>
 </mat-card>
 <div class="info-lopd">Puede ejercer sus derechos reconocidos en la LOPD enviando un correo a <a href="mailto:dpd@upv.es">dpd@upv.es</a></div>

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from itertools import combinations
 from pathlib import Path
 from typing import List, Tuple, Sequence
 import torch
@@ -12,8 +13,9 @@ import os
 
 from utils.Model.smallCNN import SmallCNN
 from utils.Model.CNN import CNN
+from utils.Model.CNN_chiffre_new import CNN_chiffre_new
 from utils.constants import FALLBACK_CLASSES
-from utils.traitement.imageProcessing import remove_margin_all, is_square
+from utils.traitement.imageProcessing import is_square
 from utils.traitement.pdf_traitement import build_dump_path
 
 
@@ -230,7 +232,17 @@ def load_exam_model(checkpoint_path: Path, device: torch.device):
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
     state_dict = checkpoint.get("model_state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
 
-    model = CNN()
+    model_name = checkpoint.get("model_name") if isinstance(checkpoint, dict) else None
+    if model_name == "CNN_chiffre_new":
+        classes = checkpoint.get("classes", [])
+        if list(classes) != [f"{digit:03d}_{digit}" for digit in range(10)]:
+            raise ValueError(
+                "CNN_chiffre_new checkpoint must contain digit classes 000_0 through 009_9"
+            )
+        model = CNN_chiffre_new()
+    else:
+        model = CNN()
+
     model.load_state_dict(state_dict)
     model.to(device)
     model.eval()
@@ -317,104 +329,253 @@ def _run_centers(runs):
     return [int(round((start + end) / 2)) for start, end in runs]
 
 
-def _grade_grid_digit_boxes(img_grey):
+GRADE_DIGIT_CELL_COUNT = 4
+GRADE_CELL_INK_THRESHOLD = 0.012
+
+
+def _grade_cell_has_ink(img_grey, box):
+    x0, y0, x1, y1 = box
+    cell_width = x1 - x0
+    cell_height = y1 - y0
+    margin_x = max(10, int(cell_width * 0.14))
+    margin_y = max(10, int(cell_height * 0.14))
+    inner = img_grey[y0 + margin_y:y1 - margin_y, x0 + margin_x:x1 - margin_x]
+    if inner.size == 0:
+        return False
+
+    ink_ratio = np.count_nonzero(inner < 200) / inner.size
+    return ink_ratio > GRADE_CELL_INK_THRESHOLD
+
+
+def _merge_nearby_positions(positions, tolerance=12):
+    clusters = []
+    for position in sorted(int(round(value)) for value in positions):
+        if clusters and position - clusters[-1][-1] <= tolerance:
+            clusters[-1].append(position)
+        else:
+            clusters.append([position])
+    return [
+        int(round(float(np.median(cluster))))
+        for cluster in clusters
+    ]
+
+
+def _grade_horizontal_positions(img_grey, dark_pixels):
+    """Find horizontal grid lines, including lines from slightly rotated scans."""
+    height, width = dark_pixels.shape
+    projection_runs = _contiguous_runs(
+        np.where(dark_pixels.sum(axis=1) > width * 0.25)[0]
+    )
+    positions = _run_centers(projection_runs)
+
+    edges = cv.Canny(img_grey, 50, 150)
+    lines = cv.HoughLinesP(
+        edges,
+        1,
+        np.pi / 180,
+        threshold=55,
+        minLineLength=max(100, int(width * 0.12)),
+        maxLineGap=50,
+    )
+    if lines is not None:
+        for x0, y0, x1, y1 in lines[:, 0]:
+            delta_x = abs(int(x1) - int(x0))
+            delta_y = abs(int(y1) - int(y0))
+            if delta_x == 0 or delta_y > max(8, int(delta_x * 0.08)):
+                continue
+            positions.append((int(y0) + int(y1)) / 2)
+
+    return [
+        position
+        for position in _merge_nearby_positions(positions)
+        if 0 <= position < height
+    ]
+
+
+def _grade_digit_boxes_for_row(img_grey, dark_pixels, row_top, row_bottom):
+    height, width = dark_pixels.shape
+    row_height = row_bottom - row_top
+    line_search_margin = min(35, max(15, int(row_height * 0.22)))
+    row_pixels = dark_pixels[row_top:row_bottom, :]
+    vertical_runs = _contiguous_runs(
+        np.where(row_pixels.sum(axis=0) > row_height * 0.35)[0]
+    )
+    x_positions = []
+    for x_start, x_end in vertical_runs:
+        x_pos = int(round((x_start + x_end) / 2))
+        column = dark_pixels[
+            row_top:row_bottom,
+            max(0, x_pos - 3):min(width, x_pos + 4),
+        ]
+        if column.size == 0:
+            continue
+
+        coverage = (column.sum(axis=1) > 0).mean()
+        # A partially erased grid line can fall below the old strict threshold,
+        # while a handwritten vertical stroke generally covers less than 70%.
+        if coverage <= 0.70:
+            continue
+
+        top_band = dark_pixels[
+            max(0, row_top - line_search_margin):
+            min(height, row_top + line_search_margin + 1),
+            max(0, x_pos - 4):min(width, x_pos + 5),
+        ]
+        bottom_band = dark_pixels[
+            max(0, row_bottom - line_search_margin):
+            min(height, row_bottom + line_search_margin + 1),
+            max(0, x_pos - 4):min(width, x_pos + 5),
+        ]
+        if top_band.sum() == 0 or bottom_band.sum() == 0:
+            continue
+
+        x_positions.append(x_pos)
+
+    x_positions = _merge_nearby_positions(x_positions)
+    if len(x_positions) < 6:
+        return None
+
+    best_candidate = None
+    # Six real boundaries delimit DD,DD. Testing subsets allows vertical
+    # handwriting strokes, especially the digit "1", to be ignored.
+    for boundaries in combinations(x_positions, 6):
+        cell_widths = [
+            x1 - x0
+            for x0, x1 in zip(boundaries, boundaries[1:])
+        ]
+        if any(cell_width < 35 or cell_width > 240 for cell_width in cell_widths):
+            continue
+
+        digit_widths = [
+            cell_widths[0],
+            cell_widths[1],
+            cell_widths[3],
+            cell_widths[4],
+        ]
+        reference_width = float(np.median(digit_widths))
+        separator_width = cell_widths[2]
+        cell_aspect_ratio = row_height / max(reference_width, 1.0)
+        if (
+            not 0.70 <= cell_aspect_ratio <= 1.60
+            or separator_width >= reference_width * 0.65
+            or any(
+                cell_width < reference_width * 0.65
+                or cell_width > reference_width * 1.45
+                for cell_width in digit_widths
+            )
+        ):
+            continue
+
+        width_variation = (
+            float(np.std(digit_widths))
+            / max(float(np.mean(digit_widths)), 1.0)
+        )
+        if width_variation > 0.25:
+            continue
+
+        digit_boxes = [
+            (boundaries[0], row_top, boundaries[1], row_bottom),
+            (boundaries[1], row_top, boundaries[2], row_bottom),
+            (boundaries[3], row_top, boundaries[4], row_bottom),
+            (boundaries[4], row_top, boundaries[5], row_bottom),
+        ]
+        grid_left = boundaries[0]
+        grid_right = boundaries[-1]
+        top_line_band = dark_pixels[
+            max(0, row_top - line_search_margin):
+            min(height, row_top + line_search_margin + 1),
+            grid_left:grid_right,
+        ]
+        bottom_line_band = dark_pixels[
+            max(0, row_bottom - line_search_margin):
+            min(height, row_bottom + line_search_margin + 1),
+            grid_left:grid_right,
+        ]
+        top_line_coverage = (top_line_band.sum(axis=0) > 0).mean()
+        bottom_line_coverage = (bottom_line_band.sum(axis=0) > 0).mean()
+        if top_line_coverage < 0.45 or bottom_line_coverage < 0.45:
+            continue
+
+        # A candidate spanning two stacked grade rows contains their shared
+        # horizontal divider. Reject it before that divider is mistaken for
+        # handwriting in every cell.
+        inner_margin = max(10, int(row_height * 0.18))
+        inner_rows = dark_pixels[
+            row_top + inner_margin:row_bottom - inner_margin,
+            grid_left:grid_right,
+        ]
+        if (
+            inner_rows.size > 0
+            and (inner_rows.sum(axis=1) / max(grid_right - grid_left, 1)).max() > 0.30
+        ):
+            continue
+
+        separator_ratio = separator_width / reference_width
+        filled_cell_count = sum(
+            _grade_cell_has_ink(img_grey, box)
+            for box in digit_boxes
+        )
+        score = (
+            filled_cell_count * 2.0
+            - width_variation
+            - abs(separator_ratio - 0.50)
+            - row_top / max(height, 1) * 0.05
+        )
+        if best_candidate is None or score > best_candidate[1]:
+            best_candidate = (digit_boxes, score)
+
+    return best_candidate
+
+
+def _grade_grid_cells(img_grey):
+    """Return the four DD,DD grade cells, including cells with no handwriting."""
     dark_pixels = (img_grey < 180).astype(np.uint8)
     height, width = dark_pixels.shape
 
-    horizontal_runs = _contiguous_runs(
-        np.where(dark_pixels.sum(axis=1) > width * 0.25)[0]
-    )
-    y_positions = _run_centers(horizontal_runs)
-    row_intervals = [
-        (y0, y1)
-        for y0, y1 in zip(y_positions, y_positions[1:])
-        if 70 <= y1 - y0 <= 220
-    ]
+    y_positions = _grade_horizontal_positions(img_grey, dark_pixels)
+    # Printed text or handwriting can create extra Hough lines inside a cell.
+    # Evaluate non-adjacent line pairs too; the border-coverage checks below
+    # reject pairs that are not the actual top and bottom grid borders.
+    row_intervals = []
+    for index, y0 in enumerate(y_positions):
+        for y1 in y_positions[index + 1:]:
+            distance = y1 - y0
+            if distance < 70:
+                continue
+            if distance > 220:
+                break
+            row_intervals.append((y0, y1))
     if len(row_intervals) == 0:
         return []
 
-    vertical_runs = _contiguous_runs(
-        np.where(dark_pixels.sum(axis=0) > height * 0.15)[0]
-    )
-
-    best_interval = None
+    row_candidates = []
     for row_top, row_bottom in row_intervals:
-        x_positions = []
-        for x_start, x_end in vertical_runs:
-            x_pos = int(round((x_start + x_end) / 2))
-            column = dark_pixels[row_top:row_bottom, max(0, x_pos - 2):min(width, x_pos + 3)]
-            if column.size == 0:
-                continue
+        candidate = _grade_digit_boxes_for_row(
+            img_grey,
+            dark_pixels,
+            row_top,
+            row_bottom,
+        )
+        if candidate is not None:
+            row_candidates.append(candidate)
 
-            coverage = (column.sum(axis=1) > 0).mean()
-            if coverage <= 0.82:
-                continue
-
-            top_band = dark_pixels[
-                max(0, row_top - 5):min(height, row_top + 8),
-                max(0, x_pos - 3):min(width, x_pos + 4),
-            ]
-            bottom_band = dark_pixels[
-                max(0, row_bottom - 8):min(height, row_bottom + 5),
-                max(0, x_pos - 3):min(width, x_pos + 4),
-            ]
-            if top_band.sum() == 0 or bottom_band.sum() == 0:
-                continue
-
-            x_positions.append(x_pos)
-
-        merged_positions = []
-        for x_pos in sorted(x_positions):
-            if len(merged_positions) > 0 and x_pos - merged_positions[-1] < 12:
-                merged_positions[-1] = int(round((merged_positions[-1] + x_pos) / 2))
-            else:
-                merged_positions.append(x_pos)
-
-        if best_interval is None or len(merged_positions) > len(best_interval[2]):
-            best_interval = (row_top, row_bottom, merged_positions)
-
-    if best_interval is None:
+    if not row_candidates:
         return []
 
-    row_top, row_bottom, x_positions = best_interval
-    candidate_boxes = []
-    candidate_widths = []
-    for x0, x1 in zip(x_positions, x_positions[1:]):
-        cell_width = x1 - x0
-        if 40 <= cell_width <= 220:
-            candidate_boxes.append((x0, row_top, x1, row_bottom))
-            candidate_widths.append(cell_width)
+    digit_boxes, _ = max(row_candidates, key=lambda candidate: candidate[1])
+    return [
+        (box, _grade_cell_has_ink(img_grey, box))
+        for box in digit_boxes
+    ]
 
-    if len(candidate_boxes) == 0:
-        return []
 
-    wide_widths = [width for width in candidate_widths if width >= 100]
-    reference_width = float(np.median(wide_widths if len(wide_widths) > 0 else candidate_widths))
-    digit_boxes = []
-    for box in candidate_boxes:
-        x0, y0, x1, y1 = box
-        cell_width = x1 - x0
-        cell_height = y1 - y0
-        if cell_width < reference_width * 0.65:
+def _crop_grade_cells(img, img_grey, cells):
+    crops = []
+    for (x0, y0, x1, y1), has_ink in cells:
+        if not has_ink:
+            crops.append(None)
             continue
 
-        margin_x = max(10, int(cell_width * 0.14))
-        margin_y = max(10, int(cell_height * 0.14))
-        inner = img_grey[y0 + margin_y:y1 - margin_y, x0 + margin_x:x1 - margin_x]
-        if inner.size == 0:
-            continue
-
-        ink_ratio = np.count_nonzero(inner < 200) / inner.size
-        if ink_ratio > 0.012:
-            digit_boxes.append((x0, y0, x1, y1))
-
-    return digit_boxes
-
-
-def _crop_grade_digits_from_grid(img, img_grey):
-    digit_boxes = _grade_grid_digit_boxes(img_grey)
-    crop_califications_list = []
-    for x0, y0, x1, y1 in digit_boxes:
         cell_width = x1 - x0
         cell_height = y1 - y0
         margin_x = max(10, int(cell_width * 0.14))
@@ -423,141 +584,172 @@ def _crop_grade_digits_from_grid(img, img_grey):
         img_auxCV = cv.cvtColor(np.array(img_aux), cv.COLOR_BGR2GRAY)
         img_auxCV = cv.resize(img_auxCV, (28, 28))
         img_auxCV = cv.bitwise_not(img_auxCV)
-        crop_califications_list.append(Image.fromarray(img_auxCV).convert('L'))
+        crops.append(Image.fromarray(img_auxCV).convert('L'))
 
-    return crop_califications_list
+    return crops
+
+
+def _boxes_overlap(box_a, box_b):
+    ax0, ay0, ax1, ay1 = box_a
+    bx0, by0, bx1, by1 = box_b
+    intersection_width = max(0, min(ax1, bx1) - max(ax0, bx0))
+    intersection_height = max(0, min(ay1, by1) - max(ay0, by0))
+    intersection = intersection_width * intersection_height
+    area_a = max(0, ax1 - ax0) * max(0, ay1 - ay0)
+    area_b = max(0, bx1 - bx0) * max(0, by1 - by0)
+    union = area_a + area_b - intersection
+    return intersection / union if union else 0.0
+
+
+def _grade_contour_cells(img_grey):
+    """Fallback detector for the four square grade cells."""
+    blur = cv.GaussianBlur(img_grey, (5, 5), 0)
+    img_edge = cv.Canny(blur, 30, 200, 1)
+    kernel = cv.getStructuringElement(cv.MORPH_RECT, (3, 3))
+    closed = cv.morphologyEx(img_edge, cv.MORPH_CLOSE, kernel)
+    contours, _ = cv.findContours(closed, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
+
+    boxes = []
+    for contour in contours:
+        if not is_square(contour):
+            continue
+
+        x, y, w, h = cv.boundingRect(contour)
+        box = (x, y, x + w, y + h)
+        if any(_boxes_overlap(box, existing) > 0.75 for existing in boxes):
+            continue
+        boxes.append(box)
+
+    if len(boxes) < GRADE_DIGIT_CELL_COUNT:
+        return []
+
+    # The crop can contain parts of adjacent rows. Select four aligned boxes
+    # belonging to the same DD,DD row.
+    boxes.sort(key=lambda box: ((box[1] + box[3]) / 2, box[0]))
+    rows = []
+    for box in boxes:
+        center_y = (box[1] + box[3]) / 2
+        box_height = box[3] - box[1]
+        for row in rows:
+            if abs(center_y - row["center_y"]) <= max(15, box_height * 0.30):
+                row["boxes"].append(box)
+                row["center_y"] = float(np.mean([
+                    (candidate[1] + candidate[3]) / 2
+                    for candidate in row["boxes"]
+                ]))
+                break
+        else:
+            rows.append({"center_y": center_y, "boxes": [box]})
+
+    candidate_rows = [
+        sorted(row["boxes"], key=lambda box: box[0])
+        for row in rows
+        if len(row["boxes"]) >= GRADE_DIGIT_CELL_COUNT
+    ]
+    if not candidate_rows:
+        return []
+
+    digit_boxes = max(
+        candidate_rows,
+        key=lambda row: sum(
+            (box[2] - box[0]) * (box[3] - box[1])
+            for box in row
+        ),
+    )[:GRADE_DIGIT_CELL_COUNT]
+    return [
+        (box, _grade_cell_has_ink(img_grey, box))
+        for box in digit_boxes
+    ]
+
+
+def _classify_grade_digit(crop, model, classes, device):
+    pixels = np.asarray(crop, dtype=np.uint8)
+    if getattr(model, "input_mode", None) == "normalized_inverted_28":
+        model_input = pixels.astype(np.float32) / 255.0
+        model_input = (model_input - 0.5) / 0.5
+    else:
+        # Legacy exammodel4.pt input preprocessing.
+        model_input = np.select(
+            [pixels <= 13, pixels <= 51, pixels <= 76],
+            [0, 26, 153],
+            default=254,
+        ).astype(np.float32)
+
+    tensor = torch.tensor(model_input, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+    if device is not None:
+        tensor = tensor.to(device)
+
+    with torch.no_grad():
+        output = model(tensor)
+        predicted_value = int(output.argmax(dim=1).item())
+
+    if classes is not None and predicted_value < len(classes):
+        label = display_label(classes[predicted_value])
+        if not str(label).isdigit():
+            raise ValueError(f"Non-digit grade class predicted: {label}")
+        predicted_value = int(label)
+
+    if not 0 <= predicted_value <= 9:
+        raise ValueError(f"Invalid grade digit predicted: {predicted_value}")
+    return predicted_value
 
 
 def detec_calification(numPage, model, classes=None, device=None):
-    # Read the grade area, detect the filled boxes, and classify each handwritten digit.
-    
+    # Detect all four DD,DD cells. Empty cells are zero; only filled cells go
+    # through the digit classifier.
     path_to_calification = build_dump_path("calification", numPage)
-    
     img = Image.open(path_to_calification)
-    
     img_grey = cv.cvtColor(np.array(img), cv.COLOR_BGR2GRAY)
-    crop_califications_list = _crop_grade_digits_from_grid(img, img_grey)
-    if len(crop_califications_list) > 0:
-        print("Grid grade detection: " + str(len(crop_califications_list)) + " digit cells on page " + str(numPage))
+    cells = _grade_grid_cells(img_grey)
+    detector_name = "grid"
+    if len(cells) != GRADE_DIGIT_CELL_COUNT:
+        detector_name = "contour fallback"
+        cells = _grade_contour_cells(img_grey)
 
-    if len(crop_califications_list) == 0:
-        print("Falling back to contour grade detection on page " + str(numPage))
-    #cv.imwrite(output_folder + "calification-grey-1-" + str(numPage) + ".png", img_grey)
-        blur = cv.GaussianBlur(img_grey, (5, 5), 0)
-    #cv.imwrite(output_folder + "calification-blur-1-" + str(numPage) + ".png", blur)
-        img_edge = cv.Canny(blur, 30, 200, 1)
-    #cv.imwrite(output_folder + "calification-edge-1-" + str(numPage) + ".png", img_edge)
-    # Close small gaps so square borders are detected as complete contours.
-        kernel = cv.getStructuringElement(cv.MORPH_RECT, (3, 3))
-        closed = cv.morphologyEx(img_edge, cv.MORPH_CLOSE, kernel)
-    
-    #cv.imwrite(output_folder + "calification-edge-closed" + str(numPage) + ".png", closed)
-    
-        contours, _ = cv.findContours(closed, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
-    
-        square_contours = []
-        for i, contour in enumerate(contours):
-            if is_square(contour):
-                square_contours.append(contour)
-            
-    # Sort left-to-right so the predicted digits keep the same order as the written grade.
-        square_contours = sorted(square_contours, key = lambda contour: cv.boundingRect(contour)[0] )
-    
-    
-        for i, contour in enumerate(square_contours):
-            x, y, w, h = cv.boundingRect(contour)
-        
-        #print(str(numPage) + " and contour " + str(i) + " is square")
-            pathToClean = build_dump_path("clean1", numPage) + f"-{i}.png"
-        
-            img_aux = img.crop((x, y, x + w, y + h))
-        
-            img_aux.save(pathToClean)
-        #img_aux = closed[y:y+h, x:x+w]
-        
-            img_auxCV = cv.imread(pathToClean)
-        
-            img_auxCV = remove_margin_all(img_auxCV)
-            img_auxCV = cv.cvtColor(img_auxCV, cv.COLOR_BGR2GRAY)
-        #ToGrey
-        
-        #
-            _, binary_img = cv.threshold(img_auxCV, 100, 255, cv.THRESH_BINARY)
-            white_pixels = cv.countNonZero(binary_img)
-            total_pixels = binary_img.size
-    
-        # Skip boxes that are completely blank.
-            print("White pixels: " + str(white_pixels) + " Total pixels: " + str(total_pixels) + " = " + str(white_pixels/total_pixels)+ "  Page: " + str(numPage) + "  Contour: " + str(i))
-            if white_pixels == total_pixels:
-                print("Empty image")
-                continue
-        
-            img_auxCV = cv.resize(img_auxCV, (28, 28))
-        
-            img_auxCV = cv.bitwise_not(img_auxCV)
-        
-            cv.imwrite(build_dump_path("final-cut", numPage) + f"-{i}.png", img_auxCV)
-        #os.remove(pathToClean)
-            imgf = Image.open(build_dump_path("final-cut", numPage) + f"-{i}.png").convert('L')
-        
-            crop_califications_list.append(imgf)
+    if len(cells) != GRADE_DIGIT_CELL_COUNT:
+        print(
+            f"[GRADE] Page {numPage}: unable to detect the four DD,DD cells",
+            flush=True,
+        )
+        os.remove(path_to_calification)
+        return ""
+
+    crops = _crop_grade_cells(img, img_grey, cells)
+    statuses = ["filled" if crop is not None else "empty" for crop in crops]
+    print(
+        f"[GRADE] Page {numPage}: {detector_name} cells = {statuses}",
+        flush=True,
+    )
+
+    digits = []
+    for position, crop in enumerate(crops, start=1):
+        if crop is None:
+            digits.append(0)
             continue
 
+        try:
+            digits.append(_classify_grade_digit(crop, model, classes, device))
+        except ValueError as exc:
+            print(
+                f"[GRADE] Page {numPage}: cell {position} classification failed ({exc}); using 0",
+                flush=True,
+            )
+            digits.append(0)
 
-    predictions_califications = []
-    for i, crop_calification in enumerate(crop_califications_list):
-        # Quantize grayscale values to the same buckets used when preparing training samples.
-        M = np.zeros((28,28), dtype=int)
-        for x in range(28):
-            for y in range(28):
-                z=crop_calification.getpixel((x,y))
-                    
-                if z <= 13:
-                    z = 0
-                elif z <= 51:
-                    z = 26
-                elif z <= 76:
-                    z = 153
-                else:
-                    z = 254
-                M[y,x] = z
-                
-        tensor = torch.Tensor(M).unsqueeze(0).unsqueeze(0)
-        if device is not None:
-            tensor = tensor.to(device)
-        
-        with torch.no_grad():
-            output = model(tensor)
-            _, predicted = torch.max(output, dim=1)
-
-        predicted_value = predicted.item()
-        if classes is not None and predicted_value < len(classes):
-            label = display_label(classes[predicted_value])
-            if not str(label).isdigit():
-                continue
-            predicted_value = int(label)
-
-        predictions_califications.append(predicted_value)
-        
-        
-    
-    
     os.remove(path_to_calification)
-    
-    calification = ''.join([str(x) for x in predictions_califications])
-    print(str(len(predictions_califications)) + " " + str(calification))
-    
-    # Rebuild a decimal grade according to how many boxes were detected.
-    if(len(predictions_califications) == 0):
-        return ""
-    if(len(predictions_califications) == 1):
-        return str(predictions_califications[0])
-    if(len(predictions_califications) == 2):
-        return str(predictions_califications[0]) + "." + str(predictions_califications[1])
-    if(len(predictions_califications) == 3):
-        return str(predictions_califications[0]) + "."+ str(predictions_califications[1]) + str(predictions_califications[2])
-    if(len(predictions_califications) == 4):
-        if(predictions_califications[1] >0):
-            return str(predictions_califications[1]) + "."+ str(predictions_califications[2]) + str(predictions_califications[3])
-        else:
-            return float(0)
+
+    integer_part = digits[0] * 10 + digits[1]
+    decimal_part = digits[2] * 10 + digits[3]
+    grade = integer_part + decimal_part / 100.0
+    formatted_grade = f"{integer_part}.{decimal_part:02d}"
+    print(
+        f"[GRADE] Page {numPage}: digits={digits} -> grade={formatted_grade}",
+        flush=True,
+    )
+    if grade > 10:
+        print(
+            f"[GRADE WARNING] Page {numPage}: detected grade {formatted_grade} is greater than 10",
+            flush=True,
+        )
+
+    return formatted_grade

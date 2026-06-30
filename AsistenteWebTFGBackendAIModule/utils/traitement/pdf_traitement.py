@@ -97,10 +97,12 @@ def convert_grade_page(page_number, input_pdf, output_folder):
         "-f", str(page_number),
         "-l", str(page_number),
         "-r", "300",
-        "-x", "1600",
-        "-y", "360",
-        "-W", "900",
-        "-H", "400",
+        # Render a broad search area instead of assuming an exact grade
+        # position. The detector locates the DD,DD grid inside this region.
+        "-x", "900",
+        "-y", "0",
+        "-W", "1600",
+        "-H", "1800",
         input_pdf,
         raw_prefix,
     ]

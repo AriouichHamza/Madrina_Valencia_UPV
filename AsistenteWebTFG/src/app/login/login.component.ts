@@ -15,6 +15,7 @@ import { environment } from 'src/environments/environment';
 export class LoginComponent implements OnInit {
 
   usuario: any = { nombre: '', password: '' }
+  isLoading = false;
 
   constructor(private authenticationService: AuthenticationService,
     private storageService: StorageService, private router: Router,
@@ -59,7 +60,9 @@ info() {
   }
   
   login() {
+    this.isLoading = true;
     this.authenticationService.login(this.usuario).subscribe(res => {
+      this.isLoading = false;
       if (res.ok) {
         this.storageService.setSession(res.data);
         this.router.navigate(['/asignaturas']);
@@ -70,6 +73,8 @@ info() {
           verticalPosition: 'top',
         });
       }
+    }, () => {
+      this.isLoading = false;
     });
   }
 }

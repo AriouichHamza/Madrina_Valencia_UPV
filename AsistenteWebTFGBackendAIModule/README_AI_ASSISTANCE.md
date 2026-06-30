@@ -36,7 +36,7 @@ AsistenteWebTFGBackendAIModule/
 │   ├── service.py                       # Reserved placeholder
 │   └── checkpoints/
 │       ├── best_model.pt                # DNI/NIF character recognition model
-│       ├── exammodel4.pt                # Grade digit recognition model
+│       ├── exammodel4_new.pt            # Grade-only CNN_chiffre_new checkpoint
 │       └── training_history.csv         # Training history for the DNI/NIF model
 │
 ├── data/
@@ -184,7 +184,7 @@ Both model files must also exist:
 
 ```text
 core/checkpoints/best_model.pt
-core/checkpoints/exammodel4.pt
+core/checkpoints/exammodel4_new.pt
 ```
 
 ## Output Protocol
@@ -218,7 +218,7 @@ Importing `utils/constants.py` reads the three command-line arguments, extracts 
 `main.py` then loads:
 
 - `SmallCNN` from `core/checkpoints/best_model.pt` for DNI/NIF characters;
-- `CNN` from `core/checkpoints/exammodel4.pt` for grade digits.
+- `CNN_chiffre_new` from `core/checkpoints/exammodel4_new.pt` for grade digits.
 
 ### 2. Convert PDF regions to images
 
@@ -323,6 +323,11 @@ python data/visualize_dataset_stats.py \
 The repository contains the intended training and evaluation commands:
 
 ```bash
+python Modules/train/train_CNN_chiffre_new.py \
+  --dataset-root ../OriginalVersion/hamza/handwriting_dataset_code/unified_dataset/images \
+  --epochs 40 \
+  --device auto
+
 python Modules/train/train.py \
   --dataset_root selected_dataset/images \
   --checkpoint_dir checkpoints_selected \
@@ -350,6 +355,8 @@ python example.py \
 
 ### Current limitation
 
+`train_CNN_chiffre_new.py` is standalone and is not affected by runtime argument parsing. It filters the source dataset to `000_0` through `009_9` without copying it and writes `core/checkpoints/exammodel4_new.pt`.
+
 `utils/constants.py` parses the runtime positional arguments as soon as it is imported. Because `utils/utils.py` imports `utils/constants.py`, the current versions of `Modules/train/train.py`, `Modules/test/test.py`, and `example.py` are still coupled to the `main.py` runtime argument format.
 
 The commands above describe their intended interfaces, but these utilities must be decoupled from runtime argument parsing before they can be executed normally. The standalone scripts under `data/` do not have this limitation.
@@ -373,6 +380,7 @@ This section provides a short description of every maintained file currently pre
 | `Modules/emitter.py` | Defines `Emitter`, the small output adapter used to send `progress`, `new-calificado`, and `done` lines to the Node.js parent process through `stdout`. |
 | `Modules/student.py` | Defines `Alumno`, the result object emitted for each exam copy. Its `to_json()` method serializes subject, exam, identity, page range, and grade fields. |
 | `Modules/knowledgebase.py` | Empty placeholder. It does not currently participate in the runtime pipeline. |
+| `Modules/train/train_CNN_chiffre_new.py` | Standalone trainer for the grade-only digit model. It exposes only classes `0` through `9`, applies production-compatible preprocessing, performs early stopping, and saves `exammodel4_new.pt`. |
 | `Modules/train/train.py` | Intended training script for the `SmallCNN` character classifier. It loads ImageFolder train/validation/test splits, supports data augmentation and weighted sampling, applies early stopping, and writes a best checkpoint plus a CSV history. |
 | `Modules/test/test.py` | Intended evaluation script for `SmallCNN`. It computes loss, accuracy, precision, recall, F1 scores, per-class metrics, predictions, confusion matrices, class-accuracy charts, and misclassified examples. |
 
@@ -382,8 +390,9 @@ This section provides a short description of every maintained file currently pre
 | --- | --- |
 | `core/service.py` | Empty placeholder. No runtime service is implemented in this file yet. |
 | `core/checkpoints/best_model.pt` | Serialized `SmallCNN` checkpoint used in production to recognize handwritten DNI/NIF characters. |
-| `core/checkpoints/exammodel4.pt` | Serialized `CNN` checkpoint used in production to recognize handwritten grade digits. |
+| `core/checkpoints/exammodel4_new.pt` | Best `CNN_chiffre_new` checkpoint trained only on digit classes `0` through `9`, used in production for handwritten grades. |
 | `core/checkpoints/training_history.csv` | Training log for the character classifier. It records epoch number, train and validation loss, train and validation accuracy, best validation accuracy, learning rate, and whether the epoch produced the best model. |
+| `core/checkpoints/training_history_CNN_chiffre_new.csv` | Epoch-by-epoch training and validation metrics for `CNN_chiffre_new`. |
 
 ### `data/`
 
@@ -425,7 +434,7 @@ These files are raw source datasets retained for experiments and dataset rebuild
 | File | Contents and purpose |
 | --- | --- |
 | `utils/Model/smallCNN.py` | Defines `SmallCNN`, the `64x64` grayscale classifier used for DNI/NIF characters. The network contains three convolution blocks and a fully connected classifier. |
-| `utils/Model/CNN.py` | Defines `CNN`, the `28x28` grayscale digit classifier used for grades. The network contains four convolution blocks and a ten-class output layer. |
+| `utils/Model/CNN_chiffre_new.py` | Defines the dedicated `28x28` grade digit classifier with ten output classes. |
 
 ### `utils/traitement/`
 
@@ -451,7 +460,7 @@ These files are raw source datasets retained for experiments and dataset rebuild
 
 ## Operational Notes
 
-- Keep `core/checkpoints/best_model.pt` and `core/checkpoints/exammodel4.pt` available in production.
+- Keep `core/checkpoints/best_model.pt` and `core/checkpoints/exammodel4_new.pt` available in production.
 - Do not include hyphens inside the individual user, subject or exam identifiers because `utils/constants.py` splits the composite index on `-`.
 - Ensure that the PDF name passed to `main.py` does not include the `.pdf` suffix.
 - If a process is interrupted before normal completion, its `utils/.img-dumps/<index>/` directory can remain on disk and may be removed manually after confirming that no process is using it.

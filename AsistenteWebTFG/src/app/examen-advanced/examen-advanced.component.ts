@@ -298,34 +298,96 @@ export class ExamenAdvancedComponent implements OnInit, AfterContentChecked {
   }
 
   handleKeydownOnTable(event: KeyboardEvent) {
-    if (event.key == 'Tab') {
+    const key = event.key;
+    if (key === 'ArrowDown' || key === 's' || key === ' ' || event.code === 'Space') {
       event.preventDefault();
       event.stopPropagation();
-      this.focusNextOnRow(event, this.selectedRow);
+      this.focusRowByOffset(1);
+    } else if (key === 'ArrowUp' || key === 'w') {
+      event.preventDefault();
+      event.stopPropagation();
+      this.focusRowByOffset(-1);
+    } else if (key === 'Enter') {
+      event.preventDefault();
+      event.stopPropagation();
+      this.editFirstNotVerified();
+    } else if (key === 'Tab') {
+      event.preventDefault();
+      event.stopPropagation();
+      this.validateCurrentRow();
     }
-    else if (event.key == ' ' || event.code == 'Space') {
+  }
+
+  focusNextOnRow(event: KeyboardEvent, _row: any) {
+    const key = event.key;
+    if (key === 'ArrowDown' || key === 's' || key === ' ' || event.code === 'Space') {
       event.preventDefault();
       event.stopPropagation();
+      this.focusRowByOffset(1);
+    } else if (key === 'ArrowUp' || key === 'w') {
+      event.preventDefault();
+      event.stopPropagation();
+      this.focusRowByOffset(-1);
+    } else if (key === 'Enter') {
+      event.preventDefault();
+      event.stopPropagation();
+      this.editFirstNotVerified();
+    } else if (key === 'Tab') {
+      event.preventDefault();
+      event.stopPropagation();
+      this.validateCurrentRow();
+    }
+  }
+
+  validateCurrentRow() {
+    const row = this.selectedRow;
+    if (!row || row.id == 0) return;
+
+    const calificado = new CalificadoAutomatizado();
+    calificado.id = row.id;
+    calificado.apellidos = row.apellidos;
+    calificado.asignatura = row.asignatura;
+    calificado.dni = row.dni;
+    calificado.examen = row.examen;
+    calificado.fin = row.fin;
+    calificado.ini = row.ini;
+    calificado.nombre = row.nombre;
+    calificado.nota = row.nota;
+    calificado.verificado = 1;
+
+    this.apiService.calificadoEditAutomatizado(calificado).subscribe(() => {
+      this.getExamenAlumnos(() => {
+        const nextIndex = this.calificadosSource.data.findIndex(c => c.verificado == 0);
+        if (nextIndex != -1) {
+          this.selectedRow = this.calificadosSource.data[nextIndex];
+          this.onRowClick(this.selectedRow);
+          setTimeout(() => this.focusRowElement(nextIndex), 0);
+        }
+      });
+    });
+    this.getStatistics();
+  }
+
+  editFirstNotVerified() {
+    let index = this.calificadosSource.data.findIndex(c => c.verificado == 0);
+    if (index != -1) {
+      this.selectedRow = this.calificadosSource.data[index];
+      this.onRowClick(this.selectedRow);
+      this.editCalificado(this.calificadosSource.data[index]);
+    } else {
       this.editCalificado(this.selectedRow);
     }
-
   }
-  focusNextOnRow(event: KeyboardEvent, row: any) {
-    if (event.key === 'Tab') {
-      event.preventDefault();
-      event.stopPropagation();
-      // Mark it as verified
 
-      //this.focusNextRow(row);
-
-      this.sendVerificado(row);
+  private focusRowByOffset(offset: number) {
+    let currentIndex = this.calificadosSource.data.findIndex(item => item.id == this.selectedRow.id);
+    if (currentIndex == -1 && this.calificadosSource.data.length > 0) {
+      currentIndex = 0;
     }
-    else if (event.key == ' ' || event.code == 'Space') {
-      event.preventDefault();
-      event.stopPropagation();
-      this.editCalificado(row);
-    }
-
+    let nextIndex = Math.max(0, Math.min(currentIndex + offset, this.calificadosSource.data.length - 1));
+    this.selectedRow = this.calificadosSource.data[nextIndex];
+    this.onRowClick(this.selectedRow);
+    setTimeout(() => this.focusRowElement(nextIndex), 0);
   }
   focusNextRow(row: any) {
     this.focusNextRowById(row.id);
@@ -365,10 +427,7 @@ export class ExamenAdvancedComponent implements OnInit, AfterContentChecked {
       if (index != -1) {
         this.selectedRow = this.calificados[index];
         this.onRowClick(this.calificados[index]);
-        let tableRowsArray = this.tableRows.toArray();
-        let row = tableRowsArray[index];
-        this.selectedElement = row.nativeElement;
-        this.selectedElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => this.focusRowElement(index), 0);
       }
     });
 

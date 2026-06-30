@@ -115,7 +115,7 @@ The `OriginalVersion/` folder contains historical versions and is not part of th
 - Levenshtein
 - Two CNN models:
   - `best_model.pt` for DNI/NIF character recognition
-  - `exammodel4.pt` for handwritten grade digit recognition
+  - `exammodel4_new.pt` for handwritten grade digit recognition
 
 ### Database
 
@@ -195,7 +195,7 @@ Verify the model checkpoints are present:
 
 ```bash
 test -f AsistenteWebTFGBackendAIModule/core/checkpoints/best_model.pt
-test -f AsistenteWebTFGBackendAIModule/core/checkpoints/exammodel4.pt
+test -f AsistenteWebTFGBackendAIModule/core/checkpoints/exammodel4_new.pt
 ```
 
 ### 4. Initialise MySQL
@@ -860,7 +860,7 @@ Also check write permissions on `user_data/` and available disk space.
 test -x .venv/bin/python
 .venv/bin/python -c "import torch, cv2, PyPDF2, Levenshtein"
 test -f AsistenteWebTFGBackendAIModule/core/checkpoints/best_model.pt
-test -f AsistenteWebTFGBackendAIModule/core/checkpoints/exammodel4.pt
+test -f AsistenteWebTFGBackendAIModule/core/checkpoints/exammodel4_new.pt
 ```
 
 Also verify `AI_PYTHON_BIN`, `AI_MODULE_PATH`, and `AI_MODULE_USER_DATA_ROOT`. The backend resolves the requested name and accepts the only PDF in the folder when there is exactly one.
@@ -880,4 +880,3 @@ pdfunite -v
 command -v mail
 echo "Test" | mail -s "Madrina test" recipient@example.org
 ```
-
