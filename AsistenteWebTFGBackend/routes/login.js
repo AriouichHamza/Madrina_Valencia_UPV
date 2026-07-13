@@ -145,8 +145,11 @@ router.post('/select', async (req, res) => {
 
   let u = { id: rows[0].id, nombre: rows[0].nombre, token: token };
 
+  // Wait for the token to be persisted before handing it to the client —
+  // the frontend authenticates its very next request with this token, and a
+  // fire-and-forget update here can lose that race against the DB write.
   let update = 'UPDATE usuarios SET token = ? WHERE id = ?';
-  db.query(update, [token, u.id], (error, rows, fields) => { });
+  await db.syncQuery(update, [token, u.id]);
 
   res.send(ok(u));
 });

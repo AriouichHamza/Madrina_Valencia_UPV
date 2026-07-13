@@ -1,4 +1,9 @@
-<!--app-full-animation [open]="!loadComplete"></app-full-animation-->
+<div class="loading-overlay" *ngIf="!loadComplete">
+	<div class="loading-overlay-panel">
+		<mat-spinner></mat-spinner>
+		<div class="loading-overlay-title">Cargando tu espacio personal...</div>
+	</div>
+</div>
 <app-navbar [settings]="true" ></app-navbar>
 <div class="asignaturas-left">
 	<div class="asignatura-navbar">

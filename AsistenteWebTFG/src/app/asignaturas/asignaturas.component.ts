@@ -302,9 +302,27 @@ export class AsignaturasComponent implements OnInit {
   }
 
   private getMainInfo() {
-    this.apiService.asignaturas().subscribe(res => {
-      this.cursos = res.data;
-      if (!this.loadComplete) this.loadComplete = true;
+    this.apiService.asignaturas().subscribe({
+      next: res => {
+        this.loadComplete = true;
+        if (res.ok) {
+          this.cursos = res.data;
+        } else {
+          this.snackBar.open(res.message || 'No se ha podido cargar tu espacio personal. Inténtalo de nuevo.', 'OK', {
+            duration: 5000,
+            horizontalPosition: 'center',
+            verticalPosition: 'top',
+          });
+        }
+      },
+      error: () => {
+        this.loadComplete = true;
+        this.snackBar.open('No se ha podido cargar tu espacio personal. Inténtalo de nuevo.', 'OK', {
+          duration: 5000,
+          horizontalPosition: 'center',
+          verticalPosition: 'top',
+        });
+      }
     });
   }
 

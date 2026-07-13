@@ -40,7 +40,7 @@ services:
     extra_hosts:
       - "backend:host-gateway"
     ports:
-      - "9000:80"
+      - "127.0.0.1:8080:80"
 
 volumes:
   backend_public:
